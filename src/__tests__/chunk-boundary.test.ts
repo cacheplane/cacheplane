@@ -62,7 +62,7 @@ describe("chunk boundary — strings", () => {
   });
 
   test("unicode escape split one digit at a time", () => {
-    const result = parseChunks(['"', '\\', 'u', '0', '0', '4', '1', '"']);
+    const result = parseChunks(['"', "\\", "u", "0", "0", "4", "1", '"']);
     expect(result).toBe("A");
   });
 });
@@ -153,7 +153,7 @@ describe("chunk boundary — objects", () => {
   });
 
   test("object split at colon", () => {
-    const result = parseChunks(['{"a"', ': 1}']);
+    const result = parseChunks(['{"a"', ": 1}"]);
     expect(result).toEqual({ a: 1 });
   });
 
@@ -181,7 +181,10 @@ describe("chunk boundary — arrays", () => {
     const json = "[[1, 2], [3, 4]]";
     for (let i = 1; i < json.length; i++) {
       const result = parseChunks([json.slice(0, i), json.slice(i)]);
-      expect(result).toEqual([[1, 2], [3, 4]]);
+      expect(result).toEqual([
+        [1, 2],
+        [3, 4],
+      ]);
     }
   });
 });

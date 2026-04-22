@@ -1,22 +1,42 @@
-import type { AstNode, ArrayNode, InternalState, JsonValue, ObjectNode, StreamError, StringNode } from "./types";
+import type {
+  AstNode,
+  ArrayNode,
+  InternalState,
+  JsonValue,
+  ObjectNode,
+  StreamError,
+  StringNode,
+} from "./types";
 
 // Number validation regex: matches a valid JSON number string
 export const NUMBER_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
 
 // --- Node operations ---
 
-export function replaceNode(nodes: AstNode[], id: number, node: AstNode): AstNode[] {
+export function replaceNode(
+  nodes: AstNode[],
+  id: number,
+  node: AstNode,
+): AstNode[] {
   if (nodes[id] === node) return nodes;
   const next = nodes.slice();
   next[id] = node;
   return next;
 }
 
-export function createStreamError(message: string, index: number, line: number, column: number): StreamError {
+export function createStreamError(
+  message: string,
+  index: number,
+  line: number,
+  column: number,
+): StreamError {
   return { message, index, line, column };
 }
 
-export function toErrorState(state: InternalState, message: string): InternalState {
+export function toErrorState(
+  state: InternalState,
+  message: string,
+): InternalState {
   return {
     ...state,
     error: createStreamError(message, state.index, state.line, state.column),
@@ -25,12 +45,18 @@ export function toErrorState(state: InternalState, message: string): InternalSta
   };
 }
 
-export function afterValue(stack: number[]): { mode: "Done" | "Separator"; complete: boolean } {
+export function afterValue(stack: number[]): {
+  mode: "Done" | "Separator";
+  complete: boolean;
+} {
   if (stack.length === 0) return { mode: "Done", complete: true };
   return { mode: "Separator", complete: false };
 }
 
-export function advancePosition(state: InternalState, ch: string): InternalState {
+export function advancePosition(
+  state: InternalState,
+  ch: string,
+): InternalState {
   return {
     ...state,
     index: state.index + 1,
@@ -41,7 +67,10 @@ export function advancePosition(state: InternalState, ch: string): InternalState
 
 // --- Identity preservation ---
 
-export function preserveArrayValue(prev: JsonValue[] | undefined, next: JsonValue[]): JsonValue[] {
+export function preserveArrayValue(
+  prev: JsonValue[] | undefined,
+  next: JsonValue[],
+): JsonValue[] {
   if (!prev || prev.length !== next.length) return next;
   for (let i = 0; i < prev.length; i += 1) {
     if (prev[i] !== next[i]) return next;
@@ -61,9 +90,14 @@ export function preserveObjectValue(
   return prev;
 }
 
-export function recomputeContainerValue(node: AstNode, nodes: AstNode[]): AstNode {
+export function recomputeContainerValue(
+  node: AstNode,
+  nodes: AstNode[],
+): AstNode {
   if (node.kind === "array") {
-    const values = node.children.map((childId) => nodes[childId].value as JsonValue);
+    const values = node.children.map(
+      (childId) => nodes[childId].value as JsonValue,
+    );
     const resolved = preserveArrayValue(node.value, values);
     if (resolved === node.value) return node;
     return { ...node, value: resolved } as ArrayNode;
@@ -81,7 +115,10 @@ export function recomputeContainerValue(node: AstNode, nodes: AstNode[]): AstNod
   return node;
 }
 
-export function propagateResolved(nodes: AstNode[], startParentId: number | null): AstNode[] {
+export function propagateResolved(
+  nodes: AstNode[],
+  startParentId: number | null,
+): AstNode[] {
   let nextNodes = nodes;
   let currentId = startParentId;
   while (currentId !== null) {
@@ -102,10 +139,15 @@ export function openNode(
   kind: AstNode["kind"],
 ): { state: InternalState; nodeId: number } {
   const id = state.nextId;
-  const parentId = state.stack.length ? state.stack[state.stack.length - 1] : null;
+  const parentId = state.stack.length
+    ? state.stack[state.stack.length - 1]
+    : null;
 
   if (state.rootId !== null && parentId === null) {
-    return { state: toErrorState(state, "Unexpected value after root"), nodeId: -1 };
+    return {
+      state: toErrorState(state, "Unexpected value after root"),
+      nodeId: -1,
+    };
   }
 
   let node: AstNode;
@@ -117,16 +159,45 @@ export function openNode(
       node = { id, kind, parentId, status: "incomplete", value: undefined };
       break;
     case "number":
-      node = { id, kind, parentId, status: "incomplete", value: undefined, buffer: "" };
+      node = {
+        id,
+        kind,
+        parentId,
+        status: "incomplete",
+        value: undefined,
+        buffer: "",
+      };
       break;
     case "string":
-      node = { id, kind, parentId, status: "incomplete", value: undefined, buffer: "" };
+      node = {
+        id,
+        kind,
+        parentId,
+        status: "incomplete",
+        value: undefined,
+        buffer: "",
+      };
       break;
     case "array":
-      node = { id, kind, parentId, status: "incomplete", value: [], children: [] };
+      node = {
+        id,
+        kind,
+        parentId,
+        status: "incomplete",
+        value: [],
+        children: [],
+      };
       break;
     case "object":
-      node = { id, kind, parentId, status: "incomplete", value: {}, children: [], keys: [] };
+      node = {
+        id,
+        kind,
+        parentId,
+        status: "incomplete",
+        value: {},
+        children: [],
+        keys: [],
+      };
       break;
   }
 
@@ -143,7 +214,10 @@ export function openNode(
       nodes = propagateResolved(nodes, parentId);
     } else if (parent.kind === "object") {
       if (!pendingKey || pendingKeyOwner !== parentId) {
-        return { state: toErrorState(state, "Missing key before value in object"), nodeId: -1 };
+        return {
+          state: toErrorState(state, "Missing key before value in object"),
+          nodeId: -1,
+        };
       }
       const keys = parent.keys.concat(pendingKey);
       const children = parent.children.concat(id);
@@ -185,7 +259,10 @@ export function closePrimitive(
   return { ...state, nodes };
 }
 
-export function closeContainer(state: InternalState, nodeId: number): InternalState {
+export function closeContainer(
+  state: InternalState,
+  nodeId: number,
+): InternalState {
   const node = state.nodes[nodeId];
   const updated = { ...node, status: "complete" as const } as AstNode;
   let nodes = replaceNode(state.nodes, nodeId, updated);
@@ -195,7 +272,10 @@ export function closeContainer(state: InternalState, nodeId: number): InternalSt
 
 // --- String helpers ---
 
-export function appendStringFragment(state: InternalState, fragment: string): InternalState {
+export function appendStringFragment(
+  state: InternalState,
+  fragment: string,
+): InternalState {
   if (state.stringContext === "value") {
     if (state.currentNodeId === null) return state;
     const node = state.nodes[state.currentNodeId] as StringNode;

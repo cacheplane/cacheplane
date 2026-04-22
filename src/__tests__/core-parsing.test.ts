@@ -26,14 +26,62 @@ describe("types", () => {
   });
 
   test("AstNode discriminates on kind field", () => {
-    const nullNode: NullNode = { id: 0, kind: "null", parentId: null, status: "complete", value: null };
-    const boolNode: BoolNode = { id: 1, kind: "boolean", parentId: null, status: "complete", value: true };
-    const numberNode: NumberNode = { id: 2, kind: "number", parentId: null, status: "complete", value: 42, buffer: "42" };
-    const stringNode: StringNode = { id: 3, kind: "string", parentId: null, status: "complete", value: "hello", buffer: "hello" };
-    const arrayNode: ArrayNode = { id: 4, kind: "array", parentId: null, status: "complete", value: [1, 2, 3], children: [0, 1, 2] };
-    const objectNode: ObjectNode = { id: 5, kind: "object", parentId: null, status: "complete", value: { a: 1 }, children: [0], keys: ["a"] };
+    const nullNode: NullNode = {
+      id: 0,
+      kind: "null",
+      parentId: null,
+      status: "complete",
+      value: null,
+    };
+    const boolNode: BoolNode = {
+      id: 1,
+      kind: "boolean",
+      parentId: null,
+      status: "complete",
+      value: true,
+    };
+    const numberNode: NumberNode = {
+      id: 2,
+      kind: "number",
+      parentId: null,
+      status: "complete",
+      value: 42,
+      buffer: "42",
+    };
+    const stringNode: StringNode = {
+      id: 3,
+      kind: "string",
+      parentId: null,
+      status: "complete",
+      value: "hello",
+      buffer: "hello",
+    };
+    const arrayNode: ArrayNode = {
+      id: 4,
+      kind: "array",
+      parentId: null,
+      status: "complete",
+      value: [1, 2, 3],
+      children: [0, 1, 2],
+    };
+    const objectNode: ObjectNode = {
+      id: 5,
+      kind: "object",
+      parentId: null,
+      status: "complete",
+      value: { a: 1 },
+      children: [0],
+      keys: ["a"],
+    };
 
-    const nodes: AstNode[] = [nullNode, boolNode, numberNode, stringNode, arrayNode, objectNode];
+    const nodes: AstNode[] = [
+      nullNode,
+      boolNode,
+      numberNode,
+      stringNode,
+      arrayNode,
+      objectNode,
+    ];
     expect(nodes[0].kind).toBe("null");
     expect(nodes[1].kind).toBe("boolean");
     expect(nodes[2].kind).toBe("number");
@@ -152,10 +200,20 @@ describe("push — strings", () => {
 
 describe("push — numbers", () => {
   const valid: [string, number][] = [
-    ["0", 0], ["-0", -0], ["1", 1], ["-1", -1], ["42", 42],
-    ["1.5", 1.5], ["-1.5", -1.5], ["1e10", 1e10], ["1E10", 1e10],
-    ["1e+10", 1e10], ["1e-10", 1e-10], ["1.5e10", 1.5e10],
-    ["123456789", 123456789], ["1e308", 1e308],
+    ["0", 0],
+    ["-0", -0],
+    ["1", 1],
+    ["-1", -1],
+    ["42", 42],
+    ["1.5", 1.5],
+    ["-1.5", -1.5],
+    ["1e10", 1e10],
+    ["1E10", 1e10],
+    ["1e+10", 1e10],
+    ["1e-10", 1e-10],
+    ["1.5e10", 1.5e10],
+    ["123456789", 123456789],
+    ["1e308", 1e308],
   ];
 
   for (const [input, expected] of valid) {
@@ -247,7 +305,10 @@ describe("push — arrays", () => {
     let state = create();
     state = push(state, "[[1, 2], [3, 4]]");
     state = finish(state);
-    expect(resolve(state)).toEqual([[1, 2], [3, 4]]);
+    expect(resolve(state)).toEqual([
+      [1, 2],
+      [3, 4],
+    ]);
   });
 
   test("parses array with whitespace", () => {
@@ -296,7 +357,10 @@ describe("push — objects", () => {
 
   test("parses complex nested structure", () => {
     let state = create();
-    state = push(state, '{"users": [{"name": "Alice", "scores": [10, 20]}, {"name": "Bob", "scores": [30]}]}');
+    state = push(
+      state,
+      '{"users": [{"name": "Alice", "scores": [10, 20]}, {"name": "Bob", "scores": [30]}]}',
+    );
     state = finish(state);
     expect(resolve(state)).toEqual({
       users: [

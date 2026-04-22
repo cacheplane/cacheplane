@@ -170,7 +170,7 @@ describe("errors — location information", () => {
   test("error includes line and column (multi-line input)", () => {
     let state = create();
     // Error is on the second line
-    state = push(state, "{\n  \"a\": X\n}");
+    state = push(state, '{\n  "a": X\n}');
     expect(state.error).not.toBeNull();
     expect(state.error!.line).toBeGreaterThan(1);
     expect(state.error!.column).toBeGreaterThan(0);

@@ -1,4 +1,12 @@
-import type { AstNode, ArrayNode, BoolNode, NullNode, NumberNode, ObjectNode, StringNode } from "./types";
+import type {
+  AstNode,
+  ArrayNode,
+  BoolNode,
+  NullNode,
+  NumberNode,
+  ObjectNode,
+  StringNode,
+} from "./types";
 
 export function isNullNode(node: AstNode): node is NullNode {
   return node.kind === "null";

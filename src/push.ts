@@ -12,7 +12,10 @@ import {
   handleDone,
 } from "./handlers";
 
-export function pushInternal(state: InternalState, chunk: string): InternalState {
+export function pushInternal(
+  state: InternalState,
+  chunk: string,
+): InternalState {
   if (state.error) return state;
 
   let s = state;

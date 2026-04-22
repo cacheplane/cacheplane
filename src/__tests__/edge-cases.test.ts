@@ -216,7 +216,7 @@ describe("edge cases — nested empty containers", () => {
     state = push(state, "[[[[]]]]");
     state = finish(state);
     expect(state.error).toBeNull();
-    expect(resolve(state)).toEqual([[[[]]]] );
+    expect(resolve(state)).toEqual([[[[]]]]);
   });
 
   test("empty array", () => {

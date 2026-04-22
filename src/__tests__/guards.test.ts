@@ -8,15 +8,71 @@ import {
   isObjectNode,
   isComplete,
 } from "../index";
-import type { AstNode, NullNode, BoolNode, NumberNode, StringNode, ArrayNode, ObjectNode } from "../index";
+import type {
+  AstNode,
+  NullNode,
+  BoolNode,
+  NumberNode,
+  StringNode,
+  ArrayNode,
+  ObjectNode,
+} from "../index";
 
-const nullNode: NullNode = { id: 0, kind: "null", parentId: null, status: "complete", value: null };
-const boolNode: BoolNode = { id: 1, kind: "boolean", parentId: null, status: "complete", value: true };
-const numberNode: NumberNode = { id: 2, kind: "number", parentId: null, status: "complete", value: 42, buffer: "42" };
-const stringNode: StringNode = { id: 3, kind: "string", parentId: null, status: "complete", value: "hello", buffer: "hello" };
-const arrayNode: ArrayNode = { id: 4, kind: "array", parentId: null, status: "complete", value: [], children: [] };
-const objectNode: ObjectNode = { id: 5, kind: "object", parentId: null, status: "complete", value: {}, children: [], keys: [] };
-const allNodes: AstNode[] = [nullNode, boolNode, numberNode, stringNode, arrayNode, objectNode];
+const nullNode: NullNode = {
+  id: 0,
+  kind: "null",
+  parentId: null,
+  status: "complete",
+  value: null,
+};
+const boolNode: BoolNode = {
+  id: 1,
+  kind: "boolean",
+  parentId: null,
+  status: "complete",
+  value: true,
+};
+const numberNode: NumberNode = {
+  id: 2,
+  kind: "number",
+  parentId: null,
+  status: "complete",
+  value: 42,
+  buffer: "42",
+};
+const stringNode: StringNode = {
+  id: 3,
+  kind: "string",
+  parentId: null,
+  status: "complete",
+  value: "hello",
+  buffer: "hello",
+};
+const arrayNode: ArrayNode = {
+  id: 4,
+  kind: "array",
+  parentId: null,
+  status: "complete",
+  value: [],
+  children: [],
+};
+const objectNode: ObjectNode = {
+  id: 5,
+  kind: "object",
+  parentId: null,
+  status: "complete",
+  value: {},
+  children: [],
+  keys: [],
+};
+const allNodes: AstNode[] = [
+  nullNode,
+  boolNode,
+  numberNode,
+  stringNode,
+  arrayNode,
+  objectNode,
+];
 
 describe("isNullNode", () => {
   test("returns true for null node", () => {
@@ -97,7 +153,13 @@ describe("isComplete", () => {
     }
   });
   test("returns false for incomplete nodes", () => {
-    const incompleteNode: NullNode = { id: 0, kind: "null", parentId: null, status: "incomplete", value: undefined };
+    const incompleteNode: NullNode = {
+      id: 0,
+      kind: "null",
+      parentId: null,
+      status: "incomplete",
+      value: undefined,
+    };
     expect(isComplete(incompleteNode)).toBe(false);
   });
 });

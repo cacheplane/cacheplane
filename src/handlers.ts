@@ -12,7 +12,10 @@ import {
 
 // ---- Value handler ----
 
-export function handleValue(state: InternalState, ch: string): { state: InternalState; pos: number } {
+export function handleValue(
+  state: InternalState,
+  ch: string,
+): { state: InternalState; pos: number } {
   // Skip whitespace
   if (ch === " " || ch === "\t" || ch === "\r" || ch === "\n") {
     return { state: advancePosition(state, ch), pos: state.index + 1 };
@@ -131,7 +134,10 @@ export function handleValue(state: InternalState, ch: string): { state: Internal
 
   // Unknown character
   const code = ch.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0");
-  return { state: toErrorState(state, `Unexpected token U+${code}`), pos: state.index };
+  return {
+    state: toErrorState(state, `Unexpected token U+${code}`),
+    pos: state.index,
+  };
 }
 
 // ---- StringValue handler ----
@@ -190,11 +196,20 @@ function isHexDigit(ch: string): boolean {
   );
 }
 
-export function handleStringValue(state: InternalState, ch: string): { state: InternalState; pos: number } {
+export function handleStringValue(
+  state: InternalState,
+  ch: string,
+): { state: InternalState; pos: number } {
   // Unicode escape accumulation
   if (state.stringUnicode !== null) {
     if (!isHexDigit(ch)) {
-      return { state: toErrorState(state, `Invalid unicode escape: expected hex digit, got '${ch}'`), pos: state.index };
+      return {
+        state: toErrorState(
+          state,
+          `Invalid unicode escape: expected hex digit, got '${ch}'`,
+        ),
+        pos: state.index,
+      };
     }
     const hexDigits = state.stringUnicode + ch;
     const s1 = advancePosition(state, ch);
@@ -216,7 +231,10 @@ export function handleStringValue(state: InternalState, ch: string): { state: In
     }
     const mapped = ESCAPE_MAP[ch];
     if (mapped === undefined) {
-      return { state: toErrorState(s1, `Invalid escape sequence \\${ch}`), pos: s1.index };
+      return {
+        state: toErrorState(s1, `Invalid escape sequence \\${ch}`),
+        pos: s1.index,
+      };
     }
     const s2 = appendStringFragment(s1, mapped);
     return { state: s2, pos: s2.index };
@@ -269,7 +287,13 @@ export function handleStringValue(state: InternalState, ch: string): { state: In
   if (code < 0x20) {
     const hex = code.toString(16).toUpperCase().padStart(4, "0");
     const name = CONTROL_NAMES[code] ?? "CONTROL";
-    return { state: toErrorState(state, `Invalid control character U+${hex} (${name}) in string`), pos: state.index };
+    return {
+      state: toErrorState(
+        state,
+        `Invalid control character U+${hex} (${name}) in string`,
+      ),
+      pos: state.index,
+    };
   }
 
   // Normal character
@@ -280,7 +304,10 @@ export function handleStringValue(state: InternalState, ch: string): { state: In
 
 // ---- NumberValue handler ----
 
-export function handleNumberValue(state: InternalState, ch: string): { state: InternalState; pos: number } {
+export function handleNumberValue(
+  state: InternalState,
+  ch: string,
+): { state: InternalState; pos: number } {
   const nodeId = state.currentNodeId!;
   const node = state.nodes[nodeId] as { buffer: string; kind: string };
   const buf = node.buffer;
@@ -297,7 +324,10 @@ export function handleNumberValue(state: InternalState, ch: string): { state: In
     // After a sole zero (possibly with minus), only `.`, `e/E` are allowed; digits are rejected
     if (isDigit(ch)) {
       return {
-        state: toErrorState(state, `Invalid number: leading zero in "${buf}${ch}"`),
+        state: toErrorState(
+          state,
+          `Invalid number: leading zero in "${buf}${ch}"`,
+        ),
         pos: state.index,
       };
     }
@@ -307,7 +337,10 @@ export function handleNumberValue(state: InternalState, ch: string): { state: In
   if (lastChar === ".") {
     if (!isDigit(ch)) {
       return {
-        state: toErrorState(state, `Invalid number: expected digit after decimal point in "${buf}"`),
+        state: toErrorState(
+          state,
+          `Invalid number: expected digit after decimal point in "${buf}"`,
+        ),
         pos: state.index,
       };
     }
@@ -317,7 +350,10 @@ export function handleNumberValue(state: InternalState, ch: string): { state: In
   if (lastChar === "e" || lastChar === "E") {
     if (!isDigit(ch) && ch !== "+" && ch !== "-") {
       return {
-        state: toErrorState(state, `Invalid number: expected digit or sign after exponent in "${buf}"`),
+        state: toErrorState(
+          state,
+          `Invalid number: expected digit or sign after exponent in "${buf}"`,
+        ),
         pos: state.index,
       };
     }
@@ -327,7 +363,10 @@ export function handleNumberValue(state: InternalState, ch: string): { state: In
   if ((lastChar === "+" || lastChar === "-") && buf.length > 1) {
     if (!isDigit(ch)) {
       return {
-        state: toErrorState(state, `Invalid number: expected digit after exponent sign in "${buf}"`),
+        state: toErrorState(
+          state,
+          `Invalid number: expected digit after exponent sign in "${buf}"`,
+        ),
         pos: state.index,
       };
     }
@@ -342,9 +381,11 @@ export function handleNumberValue(state: InternalState, ch: string): { state: In
 
   if (isNumberChar) {
     // Append to buffer
-    const updatedNode = { ...node, buffer: buf + ch } as typeof node & { buffer: string };
+    const updatedNode = { ...node, buffer: buf + ch } as typeof node & {
+      buffer: string;
+    };
     const nodes = state.nodes.slice();
-    nodes[nodeId] = updatedNode as typeof state.nodes[number];
+    nodes[nodeId] = updatedNode as (typeof state.nodes)[number];
     const s1 = advancePosition({ ...state, nodes }, ch);
     return { state: s1, pos: s1.index };
   }
@@ -369,7 +410,10 @@ export function handleNumberValue(state: InternalState, ch: string): { state: In
 
 // ---- LiteralValue handler ----
 
-export function handleLiteralValue(state: InternalState, ch: string): { state: InternalState; pos: number } {
+export function handleLiteralValue(
+  state: InternalState,
+  ch: string,
+): { state: InternalState; pos: number } {
   const expected = state.literalExpected!;
   const nodeId = state.currentNodeId!;
 
@@ -384,12 +428,24 @@ export function handleLiteralValue(state: InternalState, ch: string): { state: I
     else value = null;
     const s1 = closePrimitive(state, nodeId, value);
     const { mode, complete } = afterValue(s1.stack);
-    return { state: { ...s1, mode, complete, literalExpected: null, literalBuffer: "" }, pos: state.index };
+    return {
+      state: {
+        ...s1,
+        mode,
+        complete,
+        literalExpected: null,
+        literalBuffer: "",
+      },
+      pos: state.index,
+    };
   }
 
   if (ch !== expected[0]) {
     return {
-      state: toErrorState(state, `Unexpected character '${ch}' while parsing literal`),
+      state: toErrorState(
+        state,
+        `Unexpected character '${ch}' while parsing literal`,
+      ),
       pos: state.index,
     };
   }
@@ -404,7 +460,11 @@ export function handleLiteralValue(state: InternalState, ch: string): { state: I
     if (newBuffer === "true") value = true;
     else if (newBuffer === "false") value = false;
     else value = null;
-    const s2 = closePrimitive({ ...s1, literalExpected: null, literalBuffer: "" }, nodeId, value);
+    const s2 = closePrimitive(
+      { ...s1, literalExpected: null, literalBuffer: "" },
+      nodeId,
+      value,
+    );
     const { mode, complete } = afterValue(s2.stack);
     return { state: { ...s2, mode, complete }, pos: s2.index };
   }
@@ -417,7 +477,10 @@ export function handleLiteralValue(state: InternalState, ch: string): { state: I
 
 // ---- ArrayItemOrEnd handler ----
 
-export function handleArrayItemOrEnd(state: InternalState, ch: string): { state: InternalState; pos: number } {
+export function handleArrayItemOrEnd(
+  state: InternalState,
+  ch: string,
+): { state: InternalState; pos: number } {
   // Skip whitespace
   if (ch === " " || ch === "\t" || ch === "\r" || ch === "\n") {
     return { state: advancePosition(state, ch), pos: state.index + 1 };
@@ -438,7 +501,10 @@ export function handleArrayItemOrEnd(state: InternalState, ch: string): { state:
 
 // ---- ObjectKeyOrEnd handler (allows `}`) ----
 
-export function handleObjectKeyOrEnd(state: InternalState, ch: string): { state: InternalState; pos: number } {
+export function handleObjectKeyOrEnd(
+  state: InternalState,
+  ch: string,
+): { state: InternalState; pos: number } {
   // Skip whitespace
   if (ch === " " || ch === "\t" || ch === "\r" || ch === "\n") {
     return { state: advancePosition(state, ch), pos: state.index + 1 };
@@ -466,19 +532,28 @@ export function handleObjectKeyOrEnd(state: InternalState, ch: string): { state:
     };
   }
 
-  return { state: toErrorState(state, `Expected string key or '}', got '${ch}'`), pos: state.index };
+  return {
+    state: toErrorState(state, `Expected string key or '}', got '${ch}'`),
+    pos: state.index,
+  };
 }
 
 // ---- ObjectKey handler (does NOT allow `}`, for after commas) ----
 
-export function handleObjectKey(state: InternalState, ch: string): { state: InternalState; pos: number } {
+export function handleObjectKey(
+  state: InternalState,
+  ch: string,
+): { state: InternalState; pos: number } {
   // Skip whitespace
   if (ch === " " || ch === "\t" || ch === "\r" || ch === "\n") {
     return { state: advancePosition(state, ch), pos: state.index + 1 };
   }
 
   if (ch === "}") {
-    return { state: toErrorState(state, "Trailing comma in object"), pos: state.index };
+    return {
+      state: toErrorState(state, "Trailing comma in object"),
+      pos: state.index,
+    };
   }
 
   if (ch === '"') {
@@ -494,12 +569,18 @@ export function handleObjectKey(state: InternalState, ch: string): { state: Inte
     };
   }
 
-  return { state: toErrorState(state, `Expected string key, got '${ch}'`), pos: state.index };
+  return {
+    state: toErrorState(state, `Expected string key, got '${ch}'`),
+    pos: state.index,
+  };
 }
 
 // ---- ObjectColon handler ----
 
-export function handleObjectColon(state: InternalState, ch: string): { state: InternalState; pos: number } {
+export function handleObjectColon(
+  state: InternalState,
+  ch: string,
+): { state: InternalState; pos: number } {
   // Skip whitespace
   if (ch === " " || ch === "\t" || ch === "\r" || ch === "\n") {
     return { state: advancePosition(state, ch), pos: state.index + 1 };
@@ -510,12 +591,18 @@ export function handleObjectColon(state: InternalState, ch: string): { state: In
     return { state: { ...s1, mode: "Value" }, pos: s1.index };
   }
 
-  return { state: toErrorState(state, `Expected ':', got '${ch}'`), pos: state.index };
+  return {
+    state: toErrorState(state, `Expected ':', got '${ch}'`),
+    pos: state.index,
+  };
 }
 
 // ---- Separator handler ----
 
-export function handleSeparator(state: InternalState, ch: string): { state: InternalState; pos: number } {
+export function handleSeparator(
+  state: InternalState,
+  ch: string,
+): { state: InternalState; pos: number } {
   // Skip whitespace
   if (ch === " " || ch === "\t" || ch === "\r" || ch === "\n") {
     return { state: advancePosition(state, ch), pos: state.index + 1 };
@@ -539,7 +626,10 @@ export function handleSeparator(state: InternalState, ch: string): { state: Inte
     const parentId = state.stack[state.stack.length - 1];
     const parent = state.nodes[parentId];
     if (parent.kind !== "array") {
-      return { state: toErrorState(state, `Expected '}' but got ']'`), pos: state.index };
+      return {
+        state: toErrorState(state, `Expected '}' but got ']'`),
+        pos: state.index,
+      };
     }
     const s1 = closeContainer(state, parentId);
     const stack = s1.stack.slice(0, -1);
@@ -552,7 +642,10 @@ export function handleSeparator(state: InternalState, ch: string): { state: Inte
     const parentId = state.stack[state.stack.length - 1];
     const parent = state.nodes[parentId];
     if (parent.kind !== "object") {
-      return { state: toErrorState(state, `Expected ']' but got '}'`), pos: state.index };
+      return {
+        state: toErrorState(state, `Expected ']' but got '}'`),
+        pos: state.index,
+      };
     }
     const s1 = closeContainer(state, parentId);
     const stack = s1.stack.slice(0, -1);
@@ -561,14 +654,26 @@ export function handleSeparator(state: InternalState, ch: string): { state: Inte
     return { state: { ...s2, mode, complete }, pos: s2.index };
   }
 
-  return { state: toErrorState(state, `Unexpected character '${ch}' in separator position`), pos: state.index };
+  return {
+    state: toErrorState(
+      state,
+      `Unexpected character '${ch}' in separator position`,
+    ),
+    pos: state.index,
+  };
 }
 
 // ---- Done handler ----
 
-export function handleDone(state: InternalState, ch: string): { state: InternalState; pos: number } {
+export function handleDone(
+  state: InternalState,
+  ch: string,
+): { state: InternalState; pos: number } {
   if (ch === " " || ch === "\t" || ch === "\r" || ch === "\n") {
     return { state: advancePosition(state, ch), pos: state.index + 1 };
   }
-  return { state: toErrorState(state, "Unexpected token after root value"), pos: state.index };
+  return {
+    state: toErrorState(state, "Unexpected token after root value"),
+    pos: state.index,
+  };
 }
