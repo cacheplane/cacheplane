@@ -1,0 +1,41 @@
+{
+  "name": "@cacheplane/partial-markdown",
+  "version": "0.3.0",
+  "description": "Streaming partial-Markdown parser with identity preservation, push/pull APIs, JSON Pointer lookups, and structural-sharing materialization.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.mjs" },
+      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@cacheplane/internal-types": "workspace:*"
+  },
+  "keywords": ["markdown", "streaming", "parser", "ast", "incremental", "partial", "llm"],
+  "author": "Cacheplane",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cacheplane/cacheplane.git",
+    "directory": "packages/partial-markdown"
+  },
+  "homepage": "https://github.com/cacheplane/cacheplane/tree/main/packages/partial-markdown#readme",
+  "bugs": "https://github.com/cacheplane/cacheplane/issues",
+  "publishConfig": { "access": "public", "provenance": true },
+  "engines": { "node": ">=20" }
+}

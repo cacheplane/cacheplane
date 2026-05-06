@@ -1,0 +1,79 @@
+// SPDX-License-Identifier: MIT
+import { describe, it, expect } from 'vitest';
+import { create, push, finish, resolve } from '../index';
+
+const corpus: { name: string; source: string; assertSnapshot: (root: any) => void }[] = [
+  {
+    name: 'plain paragraph',
+    source: 'Hello world.\n',
+    assertSnapshot(root) {
+      expect(root.type).toBe('document');
+      expect(root.children[0].type).toBe('paragraph');
+    },
+  },
+  {
+    name: 'h1 heading',
+    source: '# Title\n',
+    assertSnapshot(root) {
+      expect(root.children[0].type).toBe('heading');
+      expect(root.children[0].level).toBe(1);
+    },
+  },
+  {
+    name: 'unordered list',
+    source: '- a\n- b\n- c\n\n',
+    assertSnapshot(root) {
+      expect(root.children[0].type).toBe('list');
+      expect(root.children[0].children).toHaveLength(3);
+    },
+  },
+  {
+    name: 'fenced code block',
+    source: '```ts\nconst x = 1;\n```\n',
+    assertSnapshot(root) {
+      expect(root.children[0].type).toBe('code-block');
+      expect(root.children[0].language).toBe('ts');
+      expect(root.children[0].text).toBe('const x = 1;');
+    },
+  },
+  {
+    name: 'blockquote',
+    source: '> hello\n> world\n\n',
+    assertSnapshot(root) {
+      expect(root.children[0].type).toBe('blockquote');
+    },
+  },
+  {
+    name: 'mixed inline',
+    source: 'A *emph* and **strong** and `code`.\n',
+    assertSnapshot(root) {
+      const p = root.children[0];
+      const kinds = p.children.map((c: any) => c.type);
+      expect(kinds).toContain('emphasis');
+      expect(kinds).toContain('strong');
+      expect(kinds).toContain('inline-code');
+    },
+  },
+];
+
+describe('streaming integration corpus', () => {
+  for (const sample of corpus) {
+    it(`one-char chunks: ${sample.name}`, () => {
+      let s = create();
+      for (const ch of sample.source) {
+        s = push(s, ch);
+      }
+      s = finish(s);
+      const root = resolve(s);
+      sample.assertSnapshot(root);
+    });
+
+    it(`whole-string push: ${sample.name}`, () => {
+      let s = create();
+      s = push(s, sample.source);
+      s = finish(s);
+      const root = resolve(s);
+      sample.assertSnapshot(root);
+    });
+  }
+});
