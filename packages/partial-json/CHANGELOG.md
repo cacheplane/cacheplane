@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1 — 2026-05-06
+
+Infrastructure-only release. No behavior changes; verifies the monorepo's
+tag-routed publish pipeline.
+
 ## 0.2.0 — 2026-05-05
 
 ### Changed (breaking type renames)
