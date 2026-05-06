@@ -1,0 +1,54 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - 'partial-json-v*'
+      - 'partial-markdown-v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Resolve package from tag
+        id: pkg
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          # tag format: <pkg>-v<version>, e.g. partial-json-v0.2.1
+          PKG="${TAG%-v*}"
+          VERSION="${TAG##*-v}"
+          echo "name=$PKG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "dir=packages/$PKG" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag $TAG -> dir=packages/$PKG version=$VERSION"
+
+      - name: Verify version matches package.json
+        run: |
+          PKG_VERSION=$(node -p "require('./${{ steps.pkg.outputs.dir }}/package.json').version")
+          if [ "$PKG_VERSION" != "${{ steps.pkg.outputs.version }}" ]; then
+            echo "Tag version ${{ steps.pkg.outputs.version }} does not match package.json $PKG_VERSION"
+            exit 1
+          fi
+
+      - name: Build target package
+        run: pnpm --filter "@cacheplane/${{ steps.pkg.outputs.name }}" build
+
+      - name: Publish to npm with OIDC provenance
+        run: pnpm --filter "@cacheplane/${{ steps.pkg.outputs.name }}" publish --no-git-checks --access public --provenance
