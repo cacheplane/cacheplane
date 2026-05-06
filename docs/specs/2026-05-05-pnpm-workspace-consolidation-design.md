@@ -65,7 +65,7 @@ This mirrors the `~/repos/Intelligence` layout so the cacheplane enterprise prod
 
 ## Shared Types: `libs/internal-types`
 
-`StreamStatus` is the only currently-shared type. Rather than duplicate it across packages or publish a third npm package, it lives in a private workspace package and is **inlined into each publishable package's build output** via tsup's `noExternal`.
+`StreamStatus` (`'pending' | 'streaming' | 'complete'`) is the only currently-shared type. It is currently duplicated as identical declarations in each package's `src/types.ts`. Rather than continue to duplicate it or publish a third npm package, it will live in a private workspace package and be **inlined into each publishable package's build output** via tsup's `noExternal`.
 
 ### Package definition
 
