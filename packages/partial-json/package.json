@@ -1,6 +1,6 @@
 {
   "name": "@cacheplane/partial-json",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Streaming partial-JSON parser with identity preservation, push/pull APIs, JSON Pointer lookups, and structural-sharing materialization.",
   "type": "module",
   "main": "./dist/index.cjs",
