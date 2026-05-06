@@ -76,3 +76,5 @@ After landing this PR, demonstrate CI works correctly by:
 - Codecov / Coveralls integration.
 - Cross-Node-version matrix (Node 20 + 22). Single Node 22 keeps CI fast.
 - e2e or integration tests against published packages (separate concern; the publish workflow already gates publish).
+
+**CI verified working on 2026-05-06**
