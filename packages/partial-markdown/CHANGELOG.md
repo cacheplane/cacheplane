@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.2 — 2026-05-06
+
+### Fixed
+
+- `finish()` now flushes a pending `lineBuffer` before closing containers.
+  Previously, single-chunk input with no trailing newline (e.g. `'hello'`,
+  `'# heading'`, `'- item'`, `'> quote'`) produced an empty document tree
+  because `push()` only processes lines that end with `\n` and `finish()`
+  closed open containers without running the buffered line through the
+  block handler. Bug existed since 0.2.0 — surfaced only with LLM responses
+  that don't terminate with a newline.
+
+## 0.3.1 — 2026-05-06
+
+Infrastructure-only release. No behavior changes; verifies the monorepo's
+tag-routed publish pipeline.
+
 ## 0.3.0 — 2026-05-05
 
 ### Added
