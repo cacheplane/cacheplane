@@ -25,6 +25,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Trusted publishing requires npm CLI 11.5.1+. Node 20's bundled npm
+      # is 10.x which doesn't fully implement the OIDC trusted-publishing
+      # flow against the npm registry endpoint.
+      - name: Upgrade npm CLI to support trusted publishing
+        run: npm install -g npm@latest
+
       - name: Resolve package from tag
         id: pkg
         run: |
@@ -48,5 +54,10 @@ jobs:
       - name: Build target package
         run: pnpm --filter "@cacheplane/${{ steps.pkg.outputs.name }}" build
 
-      - name: Publish to npm with OIDC provenance
-        run: pnpm --filter "@cacheplane/${{ steps.pkg.outputs.name }}" publish --no-git-checks --access public --provenance
+      # Use npm publish (not pnpm publish): the OIDC trusted-publishing
+      # token exchange is implemented in npm CLI 11.5.1+, not in pnpm 9.
+      - name: Publish to npm with OIDC trusted publishing
+        working-directory: ${{ steps.pkg.outputs.dir }}
+        run: npm publish --access public --provenance
+        env:
+          NPM_CONFIG_PROVENANCE: 'true'
