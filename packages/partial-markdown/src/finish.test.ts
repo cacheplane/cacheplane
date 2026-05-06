@@ -72,4 +72,22 @@ describe('finishInternal', () => {
     expect(out.complete).toBe(true);
     expect(out.error).toBeNull();
   });
+
+  it('flushes pending lineBuffer (no trailing newline) — live-smoke regression', async () => {
+    // Live browser smoke caught: gpt-5-mini sometimes emits a short reply
+    // like 'hello' as a single chunk with no trailing '\n'. Prior to this
+    // fix, push() left 'hello' in lineBuffer and finish() didn't flush it,
+    // producing an empty document. Same applies to '# heading', '- item',
+    // etc. The fix runs the trailing buffer through handleBlockLine.
+    const { create, push, finish, resolve } = await import('./index');
+    for (const input of ['hello', '# heading', '- item', '> quote']) {
+      let s = create();
+      s = push(s, input);
+      s = finish(s);
+      const root = resolve(s) as { children?: { type: string }[] };
+      expect(
+        root?.children && root.children.length > 0,
+      ).toBe(true);
+    }
+  });
 });

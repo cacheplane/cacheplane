@@ -1,13 +1,23 @@
 // SPDX-License-Identifier: MIT
 import type { InternalState } from './types';
 import { setStatus, pushWarning } from './internals';
-import { appendOrExtendParagraph, closeOpenParagraph } from './handlers/block';
+import { handleBlockLine, appendOrExtendParagraph, closeOpenParagraph } from './handlers/block';
 
 export function finishInternal(state: InternalState): InternalState {
   if (state.complete) return state;
   if (state.error) return state;
 
   let s = state;
+
+  // Flush any pending lineBuffer (content after the last newline that
+  // push() never processed). Without this, short inputs like 'hello' or
+  // '# heading' that don't end in '\n' produce an empty document tree
+  // even after finish() — the buffered line stays unflushed. Live browser
+  // smoke caught this when gpt-5-mini emitted a single short reply.
+  if (s.lineBuffer.length > 0) {
+    const trailing = s.lineBuffer;
+    s = handleBlockLine({ ...s, lineBuffer: '' }, trailing);
+  }
 
   // Flush any pending table-header candidate as a paragraph (no warning;
   // EOF without alignment row is normal).
