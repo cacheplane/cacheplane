@@ -15,7 +15,11 @@
 // Status tristate (shared)
 // ────────────────────────────────────────────────────────────────────────────
 
-export type { StreamStatus } from '@cacheplane/internal-types';
+/**
+ * Parsing / streaming state of a node.
+ * Must stay in sync with @cacheplane/internal-types; verified by types.test.ts.
+ */
+export type StreamStatus = 'pending' | 'streaming' | 'complete';
 
 export type Alignment = 'left' | 'center' | 'right' | null;
 

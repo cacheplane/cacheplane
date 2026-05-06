@@ -124,8 +124,11 @@ export interface InternalState extends StreamState {
 /** Kinds of JSON values a node can represent. */
 export type JsonNodeType = 'object' | 'array' | 'string' | 'number' | 'boolean' | 'null';
 
-/** Parsing state of a node. */
-export type { StreamStatus } from '@cacheplane/internal-types';
+/**
+ * Parsing / streaming state of a node.
+ * Must stay in sync with @cacheplane/internal-types; verified by types.test.ts.
+ */
+export type StreamStatus = 'pending' | 'streaming' | 'complete';
 
 /** Base shape shared by all nodes. */
 export interface JsonNodeBase {
