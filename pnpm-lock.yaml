@@ -33,19 +33,9 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/node@22.19.17)
 
-  libs/internal-types: {}
+  packages/partial-json: {}
 
-  packages/partial-json:
-    devDependencies:
-      '@cacheplane/internal-types':
-        specifier: workspace:*
-        version: link:../../libs/internal-types
-
-  packages/partial-markdown:
-    devDependencies:
-      '@cacheplane/internal-types':
-        specifier: workspace:*
-        version: link:../../libs/internal-types
+  packages/partial-markdown: {}
 
 packages:
 

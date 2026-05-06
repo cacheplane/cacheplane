@@ -43,8 +43,7 @@ cacheplane/
 ├── packages/                   # PUBLISHABLE to npm
 │   ├── partial-json/           # @cacheplane/partial-json
 │   └── partial-markdown/       # @cacheplane/partial-markdown
-├── libs/                       # PRIVATE workspace-only code
-│   └── internal-types/         # @cacheplane/internal-types (private)
+├── libs/                       # PRIVATE workspace-only code (reserved; empty)
 ├── apps/                       # reserved (.gitkeep)
 ├── tools/                      # reserved (.gitkeep)
 ├── docs/
@@ -63,46 +62,17 @@ cacheplane/
 
 This mirrors the `~/repos/Intelligence` layout so the cacheplane enterprise product can grow into the same shape without restructuring.
 
-## Shared Types: `libs/internal-types`
+## Shared Types: pragmatic duplication, pinned by tests
 
-`StreamStatus` (`'pending' | 'streaming' | 'complete'`) is the only currently-shared type. It is currently duplicated as identical declarations in each package's `src/types.ts`. Rather than continue to duplicate it or publish a third npm package, it will live in a private workspace package and be **inlined into each publishable package's build output** via tsup's `noExternal`.
+`StreamStatus` (`'pending' | 'streaming' | 'complete'`) is the only currently-shared type. The original design called for a private `libs/internal-types` workspace package re-exported via tsup's `noExternal`, but during implementation `rollup-plugin-dts` (used by tsup for `.d.ts` rollup) did not honor `noExternal` reliably for the workspace dependency, producing `dist/*.d.ts` with a live `from '@cacheplane/internal-types'` import — which would have leaked into consumer `node_modules`.
 
-### Package definition
+For a single 1-line type, the cost of working around tsup's DTS limitation (pre-build inlining script, or replacing tsup's DTS step with api-extractor) is greater than the cost of duplicating the type.
 
-`libs/internal-types/package.json`:
+**Final approach:** each package declares `StreamStatus` literally in its own `src/types.ts`. Each package has a `types.test.ts` that asserts the exact tristate via `expectTypeOf<StreamStatus>().toEqualTypeOf<'pending' | 'streaming' | 'complete'>()`. Drift between the two packages is caught by CI test failure. The JSDoc on each declaration cross-references the sibling package by name.
 
-```json
-{
-  "name": "@cacheplane/internal-types",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts"
-}
-```
+`libs/internal-types/` does not exist. The `libs/*` glob in `pnpm-workspace.yaml` is preserved for future shared code (where a build step or a published artifact justifies the abstraction).
 
-Source-only (no build step) — consumed directly by sibling packages' tsup builds.
-
-### Consumption
-
-Each publishable package:
-
-- Adds `"@cacheplane/internal-types": "workspace:*"` to `devDependencies` (build-time only, not a runtime dep).
-- Re-exports the type from its own entry point:
-
-  ```ts
-  // packages/partial-json/src/index.ts
-  export type { StreamStatus } from '@cacheplane/internal-types';
-  ```
-
-- Adds `noExternal: ['@cacheplane/internal-types']` to `tsup.config.ts` so the type/code is inlined into `dist/`.
-
-Consumers of `@cacheplane/partial-json` see `StreamStatus` re-exported from the package itself, with **zero transitive dependencies**.
-
-### Risk
-
-tsup's `.d.ts` rollup occasionally produces awkward declaration output when re-exporting types from inlined modules. Mitigation: a smoke test during implementation that builds both packages and runs `tsc --noEmit` against a tiny scratch consumer that imports `StreamStatus`. If it misbehaves, fallback options are a tsup plugin or a pre-build copy step. Not blocking.
+When a second shared type appears, revisit this decision — at that point the cost calculus may favor either a build-time inlining script, an api-extractor swap-in, or a published `@cacheplane/internal-types` package depending on what the new type looks like.
 
 ## Build & Test Tooling
 
@@ -224,7 +194,7 @@ Detailed steps go in the implementation plan. High-level sequence:
 
 1. Create skeleton (`git init`, root configs, workspace globs, empty `apps/.gitkeep` + `tools/.gitkeep`).
 2. Copy package sources from old repos (no git history). Strip per-package `devDependencies` and `eslint.config.js`. Update repository URLs.
-3. Create `libs/internal-types/` with `StreamStatus`. Wire `noExternal` into both tsup configs. Replace local `StreamStatus` definitions with re-exports.
+3. Keep `StreamStatus` declared in each package's `src/types.ts`. Add a `types.test.ts` to each package asserting the tristate via `expectTypeOf`.
 4. Write root configs (`package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `eslint.config.js`).
 5. Write `.github/workflows/{ci,publish}.yml`.
 6. Verify locally: `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`. Smoke-test the inlined `StreamStatus` types via a scratch consumer.
@@ -239,7 +209,7 @@ Called out so they aren't forgotten, but not acted on now:
 
 - **Nx** — adopt when the first app lands, or when the package graph hits ~5 packages with non-trivial inter-deps. pnpm filters suffice today.
 - **changesets** — adopt when manual changelog/version bookkeeping starts hurting. Two packages on patch cadence don't need it.
-- **Promoting `@cacheplane/internal-types` to a published package** — only if a third consumer appears outside this workspace.
+- **Single source of truth for shared types** — when a second shared type appears, revisit. Options at that point: build-time inlining script, replace tsup's DTS step with api-extractor, or a published `@cacheplane/internal-types` package. For one 1-line type, pinned-by-test duplication is fine.
 
 ## Success Criteria
 
