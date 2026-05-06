@@ -6,8 +6,10 @@ on:
     branches: [main]
 
 jobs:
-  verify:
+  workspace:
+    name: Workspace — install + lint + typecheck
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -15,8 +17,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'pnpm'
+          node-version: '22'
+          cache: pnpm
 
       - run: pnpm install --frozen-lockfile
 
@@ -24,6 +26,41 @@ jobs:
 
       - run: pnpm typecheck
 
-      - run: pnpm test
+  package:
+    name: Package — ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [partial-json, partial-markdown]
+    steps:
+      - uses: actions/checkout@v4
 
-      - run: pnpm build
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Test with coverage
+        run: pnpm --filter @cacheplane/${{ matrix.package }} run test -- --coverage
+
+      - name: Build
+        run: pnpm --filter @cacheplane/${{ matrix.package }} build
+
+      - name: Check packaging (publint)
+        run: pnpm --filter @cacheplane/${{ matrix.package }} publint
+
+      - name: Check types resolution (attw)
+        run: pnpm --filter @cacheplane/${{ matrix.package }} attw
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ matrix.package }}
+          path: packages/${{ matrix.package }}/coverage/
+          retention-days: 7
