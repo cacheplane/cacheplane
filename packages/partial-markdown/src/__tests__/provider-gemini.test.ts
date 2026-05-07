@@ -1,0 +1,72 @@
+import { describe, expect, it } from 'vitest';
+import { createPartialMarkdownParser } from '../index';
+
+interface GeminiChunk {
+  candidates: Array<{
+    content: {
+      parts: Array<{ text?: string }>;
+    };
+  }>;
+}
+
+function feedGeminiMarkdown(chunks: GeminiChunk[]) {
+  const parser = createPartialMarkdownParser();
+
+  for (const chunk of chunks) {
+    for (const candidate of chunk.candidates) {
+      for (const part of candidate.content.parts) {
+        if (part.text !== undefined) parser.push(part.text);
+      }
+    }
+  }
+
+  return parser;
+}
+
+describe('Gemini-shaped Markdown streams', () => {
+  it('parses markdown split across candidate part text chunks', () => {
+    const parser = feedGeminiMarkdown([
+      {
+        candidates: [{ content: { parts: [{ text: '# Summ' }] } }],
+      },
+      {
+        candidates: [{ content: { parts: [{ text: 'ary\n\nA **bo' }] } }],
+      },
+      {
+        candidates: [{ content: { parts: [{ text: 'ld** move.\n' }] } }],
+      },
+    ]);
+
+    parser.finish();
+    const root = parser.root;
+    expect(root?.children[0]?.type).toBe('heading');
+    expect(root?.children[1]?.type).toBe('paragraph');
+    const paragraph = root?.children[1];
+    expect(paragraph?.type).toBe('paragraph');
+    if (paragraph?.type === 'paragraph') {
+      expect(paragraph.children.map((child) => child.type)).toContain('strong');
+    }
+  });
+
+  it('handles line-boundary table chunks', () => {
+    const parser = feedGeminiMarkdown([
+      {
+        candidates: [{ content: { parts: [{ text: '| A | B |\n' }] } }],
+      },
+      {
+        candidates: [{ content: { parts: [{ text: '| --- | ---: |\n' }] } }],
+      },
+      {
+        candidates: [{ content: { parts: [{ text: '| left | right |\n' }] } }],
+      },
+    ]);
+
+    parser.finish();
+    const table = parser.root?.children[0];
+    expect(table?.type).toBe('table');
+    if (table?.type === 'table') {
+      expect(table.alignments).toEqual([null, 'right']);
+      expect(table.children).toHaveLength(2);
+    }
+  });
+});
