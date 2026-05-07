@@ -138,4 +138,31 @@ describe('Link reference finish warnings', () => {
 
     expect(state.warnings.some(w => w.code === 'unused_link_def')).toBe(true);
   });
+
+  it('unused_link_def is NOT emitted when def is referenced (forward resolution)', () => {
+    let state = createInternal();
+    state = pushInternal(state, 'See [foo].\n');
+    state = pushInternal(state, '[foo]: /resolved\n');
+    state = finishInternal(state);
+    expect(state.warnings.some((w) => w.code === 'unused_link_def')).toBe(false);
+  });
+
+  it('unused_link_def is NOT emitted when def is referenced (backward resolution)', () => {
+    let state = createInternal();
+    state = pushInternal(state, '[foo]: /resolved\n');
+    state = pushInternal(state, 'See [foo].\n');
+    state = finishInternal(state);
+    expect(state.warnings.some((w) => w.code === 'unused_link_def')).toBe(false);
+  });
+});
+
+describe('Link reference URL forms', () => {
+  it('angle-bracket URL form: [foo]: <https://example.com>', () => {
+    const p = createPartialMarkdownParser();
+    p.push('See [foo] now.\n[foo]: <https://example.com> "Title"\n');
+    p.finish();
+    const def = p.root!.linkDefinitions.get('foo')!;
+    expect(def.url).toBe('https://example.com');
+    expect(def.title).toBe('Title');
+  });
 });
