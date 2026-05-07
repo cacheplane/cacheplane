@@ -9,6 +9,7 @@ import type {
   MarkdownListItemNode,
   MarkdownCodeBlockNode,
   MarkdownMathDisplayNode,
+  MarkdownHtmlBlockNode,
   MarkdownThematicBreakNode,
   MarkdownTextNode,
   MarkdownEmphasisNode,
@@ -16,6 +17,7 @@ import type {
   MarkdownStrikethroughNode,
   MarkdownInlineCodeNode,
   MarkdownMathInlineNode,
+  MarkdownHtmlInlineNode,
   MarkdownLinkNode,
   MarkdownAutolinkNode,
   MarkdownImageNode,
@@ -36,6 +38,7 @@ export function isListNode(n: MarkdownNode): n is MarkdownListNode { return n.ty
 export function isListItemNode(n: MarkdownNode): n is MarkdownListItemNode { return n.type === 'list-item'; }
 export function isCodeBlockNode(n: MarkdownNode): n is MarkdownCodeBlockNode { return n.type === 'code-block'; }
 export function isMathDisplayNode(n: MarkdownNode): n is MarkdownMathDisplayNode { return n.type === 'math-display'; }
+export function isHtmlBlockNode(n: MarkdownNode): n is MarkdownHtmlBlockNode { return n.type === 'html-block'; }
 export function isThematicBreakNode(n: MarkdownNode): n is MarkdownThematicBreakNode { return n.type === 'thematic-break'; }
 export function isTextNode(n: MarkdownNode): n is MarkdownTextNode { return n.type === 'text'; }
 export function isEmphasisNode(n: MarkdownNode): n is MarkdownEmphasisNode { return n.type === 'emphasis'; }
@@ -43,6 +46,7 @@ export function isStrongNode(n: MarkdownNode): n is MarkdownStrongNode { return 
 export function isStrikethroughNode(n: MarkdownNode): n is MarkdownStrikethroughNode { return n.type === 'strikethrough'; }
 export function isInlineCodeNode(n: MarkdownNode): n is MarkdownInlineCodeNode { return n.type === 'inline-code'; }
 export function isMathInlineNode(n: MarkdownNode): n is MarkdownMathInlineNode { return n.type === 'math-inline'; }
+export function isHtmlInlineNode(n: MarkdownNode): n is MarkdownHtmlInlineNode { return n.type === 'html-inline'; }
 export function isLinkNode(n: MarkdownNode): n is MarkdownLinkNode { return n.type === 'link'; }
 export function isAutolinkNode(n: MarkdownNode): n is MarkdownAutolinkNode { return n.type === 'autolink'; }
 export function isImageNode(n: MarkdownNode): n is MarkdownImageNode { return n.type === 'image'; }

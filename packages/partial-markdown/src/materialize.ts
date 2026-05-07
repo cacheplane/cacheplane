@@ -35,6 +35,10 @@ function computeVersion(node: MarkdownNode): string {
       return `${node.type}:${node.status}:${(node as any).text}`;
     case 'math-display':
       return `math-display:${node.status}:${(node as any).delimiter}:${(node as any).text}`;
+    case 'html-inline':
+      return `html-inline:${node.status}:${(node as any).raw}`;
+    case 'html-block':
+      return `html-block:${node.status}:${(node as any).htmlKind}:${(node as any).raw}`;
     case 'code-block':
       return `code-block:${node.status}:${(node as any).language}:${(node as any).text}`;
     case 'autolink':

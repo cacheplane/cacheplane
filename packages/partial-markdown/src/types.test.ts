@@ -73,6 +73,8 @@ describe('types', () => {
       | 'link-reference'
       | 'math-inline'
       | 'math-display'
+      | 'html-inline'
+      | 'html-block'
     >();
   });
 
@@ -92,6 +94,7 @@ describe('types', () => {
       | 'link-def-title'
       | 'math-inline'
       | 'math-display'
+      | 'html-block'
       | 'done'
       | 'error'
     >();

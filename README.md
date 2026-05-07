@@ -13,7 +13,7 @@ so UI layers can render partial output without losing memoization.
 | Package | npm | Use it for | Highlights |
 |---|---|---|---|
 | [`@cacheplane/partial-json`](packages/partial-json) | [![npm](https://img.shields.io/npm/v/@cacheplane/partial-json.svg)](https://www.npmjs.com/package/@cacheplane/partial-json) | JSON streamed from an LLM or any incremental source | Partial strings and numbers, JSON Pointer lookup, push and pull APIs, structural-sharing snapshots |
-| [`@cacheplane/partial-markdown`](packages/partial-markdown) | [![npm](https://img.shields.io/npm/v/@cacheplane/partial-markdown.svg)](https://www.npmjs.com/package/@cacheplane/partial-markdown) | Markdown streamed into chat, agent logs, reports, or AI writing surfaces | Headings, lists, task lists, tables, citations, link references, math, inline formatting, stable AST identity |
+| [`@cacheplane/partial-markdown`](packages/partial-markdown) | [![npm](https://img.shields.io/npm/v/@cacheplane/partial-markdown.svg)](https://www.npmjs.com/package/@cacheplane/partial-markdown) | Markdown streamed into chat, agent logs, reports, or AI writing surfaces | Headings, lists, task lists, tables, citations, link references, math, raw HTML, inline formatting, stable AST identity |
 
 Both packages are:
 

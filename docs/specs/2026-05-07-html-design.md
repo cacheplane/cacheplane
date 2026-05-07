@@ -18,6 +18,14 @@ responsibility.
 Detection follows the **CommonMark §4.6 (block) and §6.6 (inline)** rules
 exactly. No "loose" detection.
 
+## 0.4.0 Implementation Note
+
+The first implementation follows the parser's current line-buffered
+architecture: inline HTML is recognized when its containing line is committed,
+and HTML block `raw` grows as content lines are committed. Top-level HTML
+blocks are supported in this slice; raw HTML blocks inside blockquotes or list
+items require a broader container-block refactor and remain future work.
+
 ## Motivation
 
 LLM output frequently contains raw HTML when:

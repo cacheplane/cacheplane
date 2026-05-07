@@ -26,6 +26,25 @@ export function finishInternal(state: InternalState): InternalState {
     s = closeOpenParagraph(s);
   }
 
+  if (s.htmlBlockNodeId !== null && s.htmlBlockKind !== null) {
+    const htmlBlockNodeId = s.htmlBlockNodeId;
+    if (s.htmlBlockKind >= 1 && s.htmlBlockKind <= 5) {
+      s = pushWarning(s, {
+        code: 'unterminated_html',
+        index: s.index,
+        detail: 'unterminated HTML block',
+      });
+    }
+    s = setStatus(s, htmlBlockNodeId, 'complete');
+    s = {
+      ...s,
+      mode: 'block',
+      htmlBlockKind: null,
+      htmlBlockNodeId: null,
+      currentNodeId: null,
+    };
+  }
+
   if (s.mathNodeId !== null) {
     const mathNodeId = s.mathNodeId;
     s = pushWarning(s, {

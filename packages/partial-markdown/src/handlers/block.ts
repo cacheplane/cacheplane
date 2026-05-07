@@ -6,6 +6,8 @@ import type {
   ParagraphAstNode,
   CodeBlockAstNode,
   MathDisplayAstNode,
+  HtmlBlockAstNode,
+  HtmlBlockKind,
   BlockquoteAstNode,
   ListAstNode,
   ListItemAstNode,
@@ -20,6 +22,7 @@ import {
   allocId,
   appendNode,
   appendChild,
+  replaceNode,
   setStatus,
   pushWarning,
   THEMATIC_BREAK_RE,
@@ -45,9 +48,11 @@ import {
   isMathOpenerAt,
   openerLength,
 } from './math';
+import { detectHtmlBlockEnd, detectHtmlBlockStart } from './html';
 
 export function handleBlockLine(state: InternalState, line: string): InternalState {
   if (state.mode === 'code-fence') return handleCodeFenceLine(state, line);
+  if (state.mode === 'html-block') return appendHtmlBlockLine({ ...state, lineBuffer: '' }, line);
   if (state.mode === 'math-display') {
     return appendMathDisplayLine({ ...state, lineBuffer: '' }, line);
   }
@@ -107,6 +112,13 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
     s = closeOpenParagraph(s);
     s = closeOpenList(s);
     return openFencedCodeBlock(s, fence[1] as '```' | '~~~', fence[2] ?? '');
+  }
+
+  const htmlKind = detectHtmlBlockStart(line, !isParagraphOpen(s));
+  if (htmlKind !== null) {
+    s = closeOpenParagraph(s);
+    s = closeOpenList(s);
+    return openHtmlBlock(s, line, htmlKind);
   }
 
   const displayMath = displayMathOpener(line, s.options.math);
@@ -255,6 +267,56 @@ function handleCodeFenceLine(state: InternalState, line: string): InternalState 
   return { ...state, nodes, line: state.line + 1 };
 }
 
+function openHtmlBlock(state: InternalState, line: string, htmlKind: HtmlBlockKind): InternalState {
+  const docId = state.rootId!;
+  const closes = detectHtmlBlockEnd(line, htmlKind);
+  const [s1, id] = allocId(state);
+  const node: HtmlBlockAstNode = {
+    id,
+    kind: 'html-block',
+    parentId: docId,
+    status: closes ? 'complete' : 'streaming',
+    raw: line,
+    htmlKind,
+  };
+  let s = appendChild(appendNode(s1, node), docId, id);
+  if (closes) return s;
+  return {
+    ...s,
+    mode: 'html-block',
+    htmlBlockKind: htmlKind,
+    htmlBlockNodeId: id,
+    currentNodeId: id,
+  };
+}
+
+function appendHtmlBlockLine(state: InternalState, line: string): InternalState {
+  if (state.htmlBlockKind === null || state.htmlBlockNodeId === null) return state;
+  const node = state.nodes[state.htmlBlockNodeId];
+  if (!node || node.kind !== 'html-block') return state;
+
+  const closes = detectHtmlBlockEnd(line, state.htmlBlockKind);
+  const appendLine = !(closes && (state.htmlBlockKind === 6 || state.htmlBlockKind === 7));
+  const raw = appendLine
+    ? (node.raw.length > 0 ? `${node.raw}\n${line}` : line)
+    : node.raw;
+  let s = replaceNode(state, state.htmlBlockNodeId, { ...node, raw });
+
+  if (closes) {
+    s = setStatus(s, state.htmlBlockNodeId, 'complete');
+    return {
+      ...s,
+      mode: 'block',
+      htmlBlockKind: null,
+      htmlBlockNodeId: null,
+      currentNodeId: null,
+      line: state.line + 1,
+    };
+  }
+
+  return { ...s, line: state.line + 1 };
+}
+
 function displayMathOpener(
   line: string,
   options: InternalState['options']['math'],
@@ -264,6 +326,11 @@ function displayMathOpener(
   const opener = isMathOpenerAt(line, start, options);
   if (!opener || (opener.kind !== '$$' && opener.kind !== '\\[')) return null;
   return { start, kind: opener.kind };
+}
+
+function isParagraphOpen(state: InternalState): boolean {
+  const cur = state.currentNodeId != null ? state.nodes[state.currentNodeId] : undefined;
+  return cur?.kind === 'paragraph' && cur.status === 'streaming';
 }
 
 function openDisplayMath(

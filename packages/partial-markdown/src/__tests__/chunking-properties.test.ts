@@ -21,6 +21,7 @@ describe('chunk partition equivalence', () => {
     'See [^src1].\n\n[^src1]: Source title <https://example.com>\n',
     'See [docs][guide] and [guide].\n\n[guide]: https://example.com "Guide"\n',
     'Result is $a+b$.\n\n$$\n\\sum_i x_i\n$$\n',
+    'Use <kbd>Esc</kbd>.\n\n<div>\nRaw HTML\n\n',
   ];
 
   for (const input of samples) {

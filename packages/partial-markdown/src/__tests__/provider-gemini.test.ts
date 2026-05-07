@@ -113,4 +113,20 @@ describe('Gemini-shaped Markdown streams', () => {
       delimiter: '\\[\\]',
     });
   });
+
+  it('parses inline HTML across candidate part text chunks', () => {
+    const parser = feedGeminiMarkdown([
+      {
+        candidates: [{ content: { parts: [{ text: 'Press <k' }] } }],
+      },
+      {
+        candidates: [{ content: { parts: [{ text: 'bd>Enter</kbd>.\n' }] } }],
+      },
+    ]);
+
+    parser.finish();
+    const paragraph = parser.root!.children[0] as any;
+    const inlineHtml = paragraph.children.filter((node: any) => node.type === 'html-inline');
+    expect(inlineHtml.map((node: any) => node.raw)).toEqual(['<kbd>', '</kbd>']);
+  });
 });

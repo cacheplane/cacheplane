@@ -94,6 +94,22 @@ describe('materialize — new node kinds', () => {
     expect(snap2.children[1].text).toBe('a+b');
   });
 
+  it('materializes HTML nodes and invalidates when block raw grows', () => {
+    const p = createPartialMarkdownParser();
+    p.push('Use <kbd>Esc</kbd>.\n\n<div>\n');
+    const snap1 = materialize(p.root) as any;
+    const inlineHtml = snap1.children[0].children.find((n: any) => n.type === 'html-inline');
+    const blockBefore = snap1.children[1];
+    expect(inlineHtml).toMatchObject({ type: 'html-inline', raw: '<kbd>' });
+    expect(blockBefore).toMatchObject({ type: 'html-block', raw: '<div>', status: 'streaming' });
+
+    p.push('content\n');
+    const snap2 = materialize(p.root) as any;
+    expect(snap2.children[0]).toBe(snap1.children[0]);
+    expect(snap2.children[1]).not.toBe(blockBefore);
+    expect(snap2.children[1].raw).toBe('<div>\ncontent');
+  });
+
   it('preserves task-list-item identity across checked-flip', () => {
     // (Manual mutation simulating a stream that toggles the marker.)
     const p = createPartialMarkdownParser();

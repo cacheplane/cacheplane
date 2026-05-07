@@ -22,6 +22,7 @@
 export type StreamStatus = 'pending' | 'streaming' | 'complete';
 
 export type Alignment = 'left' | 'center' | 'right' | null;
+export type HtmlBlockKind = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export interface PartialMarkdownParserOptions {
   math?: {
@@ -58,6 +59,7 @@ export type ParseMode =
   | 'link-def-title'
   | 'math-inline'
   | 'math-display'
+  | 'html-block'
   | 'done'
   | 'error';
 
@@ -82,7 +84,8 @@ export interface MarkdownWarning {
     | 'unresolved_link_ref'
     | 'unused_link_def'
     | 'duplicate_link_def'
-    | 'unterminated_math';
+    | 'unterminated_math'
+    | 'unterminated_html';
   index: number;
   detail?: string;
 }
@@ -112,7 +115,9 @@ export type AstNodeKind =
   | 'citation-reference'
   | 'link-reference'
   | 'math-inline'
-  | 'math-display';
+  | 'math-display'
+  | 'html-inline'
+  | 'html-block';
 
 interface AstNodeBase {
   id: number;
@@ -274,6 +279,17 @@ export interface MathDisplayAstNode extends AstNodeBase {
   delimiter: '$$' | '\\[\\]';
 }
 
+export interface HtmlInlineAstNode extends AstNodeBase {
+  kind: 'html-inline';
+  raw: string;
+}
+
+export interface HtmlBlockAstNode extends AstNodeBase {
+  kind: 'html-block';
+  raw: string;
+  htmlKind: HtmlBlockKind;
+}
+
 export type AstNode =
   | DocumentAstNode
   | ParagraphAstNode
@@ -299,7 +315,9 @@ export type AstNode =
   | CitationReferenceAstNode
   | LinkReferenceAstNode
   | MathInlineAstNode
-  | MathDisplayAstNode;
+  | MathDisplayAstNode
+  | HtmlInlineAstNode
+  | HtmlBlockAstNode;
 
 export interface StreamState {
   nodes: AstNode[];
@@ -329,6 +347,12 @@ export interface InternalState extends StreamState {
   mathOpener: '$' | '$$' | '\\(' | '\\[' | null;
   /** Currently open math node id, if any. */
   mathNodeId: number | null;
+  /** Currently open HTML block kind, if any. */
+  htmlBlockKind: HtmlBlockKind | null;
+  /** Currently open HTML block node id, if any. */
+  htmlBlockNodeId: number | null;
+  /** Reserved for future character-level inline HTML pending matches. */
+  htmlInlinePending: string;
   /** Map of citation id → 1-based parser-assigned index. Stable across the parse. */
   citationIndex: Map<string, number>;
   /** Map of citation id → AstNode ids of references encountered for that id. */
@@ -431,6 +455,12 @@ export interface MarkdownMathDisplayNode extends MarkdownNodeBase {
   delimiter: '$$' | '\\[\\]';
 }
 
+export interface MarkdownHtmlBlockNode extends MarkdownNodeBase {
+  readonly type: 'html-block';
+  raw: string;
+  htmlKind: HtmlBlockKind;
+}
+
 export interface MarkdownThematicBreakNode extends MarkdownNodeBase {
   readonly type: 'thematic-break';
 }
@@ -464,6 +494,11 @@ export interface MarkdownMathInlineNode extends MarkdownNodeBase {
   readonly type: 'math-inline';
   text: string;
   delimiter: '$' | '\\(\\)';
+}
+
+export interface MarkdownHtmlInlineNode extends MarkdownNodeBase {
+  readonly type: 'html-inline';
+  raw: string;
 }
 
 export interface MarkdownLinkNode extends MarkdownNodeBase {
@@ -557,6 +592,7 @@ export type MarkdownBlockNode =
   | MarkdownListNode
   | MarkdownCodeBlockNode
   | MarkdownMathDisplayNode
+  | MarkdownHtmlBlockNode
   | MarkdownThematicBreakNode
   | MarkdownTableNode;
 
@@ -567,6 +603,7 @@ export type MarkdownInlineNode =
   | MarkdownStrikethroughNode
   | MarkdownInlineCodeNode
   | MarkdownMathInlineNode
+  | MarkdownHtmlInlineNode
   | MarkdownLinkNode
   | MarkdownAutolinkNode
   | MarkdownImageNode

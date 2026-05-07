@@ -129,7 +129,7 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
         newIds.push(i);
         snap.set(i, {
           status: ast.status,
-          textLen: 'text' in ast ? (ast as any).text.length : 0,
+          textLen: contentLength(ast),
           childrenLen: 'children' in ast ? (ast as any).children.length : 0,
         });
       }
@@ -155,7 +155,7 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
       if (!md) continue;
       const before = snap.get(i)!;
 
-      const textLen = 'text' in ast ? (ast as any).text.length : 0;
+      const textLen = contentLength(ast);
       const childrenLen = 'children' in ast ? (ast as any).children.length : 0;
       const textChanged =
         (
@@ -163,15 +163,19 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
           ast.kind === 'inline-code' ||
           ast.kind === 'code-block' ||
           ast.kind === 'math-inline' ||
-          ast.kind === 'math-display'
+          ast.kind === 'math-display' ||
+          ast.kind === 'html-inline' ||
+          ast.kind === 'html-block'
         ) &&
         textLen !== before.textLen;
       const childrenChanged = 'children' in ast && childrenLen !== before.childrenLen;
       const statusChanged = ast.status !== before.status;
 
       if (textChanged) {
-        const delta = (ast as any).text.slice(before.textLen);
-        (md as any).text = (ast as any).text;
+        const value = 'text' in ast ? (ast as any).text : (ast as any).raw;
+        const delta = value.slice(before.textLen);
+        if ('text' in ast) (md as any).text = value;
+        else (md as any).raw = value;
         events.push({ type: 'value-updated', node: md, delta });
       }
 
@@ -383,6 +387,13 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
         base.text = ast.text;
         base.delimiter = ast.delimiter;
         break;
+      case 'html-inline':
+        base.raw = ast.raw;
+        break;
+      case 'html-block':
+        base.raw = ast.raw;
+        base.htmlKind = ast.htmlKind;
+        break;
     }
     if (ast.kind === 'heading') base.level = ast.level;
     if (ast.kind === 'list') {
@@ -453,6 +464,12 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
     },
   };
   return parser;
+}
+
+function contentLength(ast: AstNode): number {
+  if ('text' in ast) return (ast as any).text.length;
+  if ('raw' in ast) return (ast as any).raw.length;
+  return 0;
 }
 
 function unescapePointer(s: string): string {

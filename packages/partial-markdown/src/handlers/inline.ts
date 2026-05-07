@@ -8,6 +8,7 @@ import type {
   StrikethroughAstNode,
   InlineCodeAstNode,
   MathInlineAstNode,
+  HtmlInlineAstNode,
   LinkAstNode,
   AutolinkAstNode,
   ImageAstNode,
@@ -26,6 +27,7 @@ import {
   normalizeLinkLabel,
 } from '../internals';
 import { findMathCloser, inlineDelimiter, isMathOpenerAt, openerLength } from './math';
+import { matchInlineHtml } from './html';
 
 /**
  * Parse a single line of inline content into AST nodes attached as children
@@ -144,6 +146,17 @@ export function parseInline(state: InternalState, parentId: number, line: string
         const built = makeLinkReference(s, parentId, linkRef.text, linkRef.label, linkRef.form);
         s = appendInlineNode(built.state, parentId, built);
         cursor.i += linkRef.length;
+        continue;
+      }
+    }
+
+    // Inline HTML. Autolink below remains separate and HTML rejects URL forms.
+    if (ch === '<') {
+      const result = matchInlineHtml(line, cursor.i);
+      if (result && result !== 'pending') {
+        const raw = line.slice(cursor.i, cursor.i + result.length);
+        s = appendInlineNode(s, parentId, makeHtmlInline(s, parentId, raw));
+        cursor.i += result.length;
         continue;
       }
     }
@@ -318,6 +331,18 @@ function makeMathInline(
     status: 'complete',
     text,
     delimiter: inlineDelimiter(kind),
+  };
+  return { state: s1, node };
+}
+
+function makeHtmlInline(state: InternalState, parentId: number, raw: string): NodeBuild {
+  const [s1, id] = allocId(state);
+  const node: HtmlInlineAstNode = {
+    id,
+    kind: 'html-inline',
+    parentId,
+    status: 'complete',
+    raw,
   };
   return { state: s1, node };
 }
