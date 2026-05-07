@@ -17,19 +17,16 @@ jobs:
 
       - uses: pnpm/action-setup@v4
 
+      # Node 24 ships npm 11.x natively, which implements the OIDC
+      # trusted-publishing flow. Earlier Node versions ship npm 10.x and
+      # require a separate `npm install -g npm@latest` step.
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
 
       - run: pnpm install --frozen-lockfile
-
-      # Trusted publishing requires npm CLI 11.5.1+. Node 20's bundled npm
-      # is 10.x which doesn't fully implement the OIDC trusted-publishing
-      # flow against the npm registry endpoint.
-      - name: Upgrade npm CLI to support trusted publishing
-        run: npm install -g npm@latest
 
       - name: Resolve package from tag
         id: pkg
