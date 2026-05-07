@@ -78,10 +78,21 @@ describe('Inline HTML matchers', () => {
 });
 
 describe('Kind-6 tag list', () => {
-  it('contains representative CommonMark block tags', () => {
-    expect(HTML_BLOCK_KIND_6_TAGS).toContain('div');
-    expect(HTML_BLOCK_KIND_6_TAGS).toContain('table');
-    expect(HTML_BLOCK_KIND_6_TAGS).toContain('ul');
+  it('kind-6 tag list contains the full CommonMark §4.6 set (62 tags)', () => {
+    const expected = [
+      'address', 'article', 'aside', 'base', 'basefont', 'blockquote', 'body',
+      'caption', 'center', 'col', 'colgroup', 'dd', 'details', 'dialog', 'dir',
+      'div', 'dl', 'dt', 'fieldset', 'figcaption', 'figure', 'footer', 'form',
+      'frame', 'frameset', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'head', 'header',
+      'hr', 'html', 'iframe', 'legend', 'li', 'link', 'main', 'menu', 'menuitem',
+      'nav', 'noframes', 'ol', 'optgroup', 'option', 'p', 'param', 'search',
+      'section', 'summary', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead',
+      'title', 'tr', 'track', 'ul',
+    ];
+    for (const tag of expected) {
+      expect(HTML_BLOCK_KIND_6_TAGS).toContain(tag);
+    }
+    expect(HTML_BLOCK_KIND_6_TAGS.length).toBe(expected.length);
   });
 });
 

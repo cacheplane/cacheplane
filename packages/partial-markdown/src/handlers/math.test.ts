@@ -133,6 +133,18 @@ describe('Math currency rejection (E2E paragraph tree)', () => {
   });
 });
 
+// C2
+it('\\$$ does not open math-display (escaped opener)', () => {
+  const p = createPartialMarkdownParser();
+  p.push('a \\$$x$$ b\n');
+  p.finish();
+  // The first $ is escaped by \, so \$$ is a literal $ followed by a
+  // standalone $. The leading \$$ does NOT open a $$...$$ display block.
+  const root = p.root!;
+  const firstChild = root.children[0] as any;
+  expect(firstChild.type).not.toBe('math-display');
+});
+
 // T8
 describe('Math in non-paragraph inline contexts', () => {
   it('math inside link text', () => {

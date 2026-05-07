@@ -12,8 +12,8 @@ export type MathOpener = '$' | '$$' | '\\(' | '\\[';
 export function isMathOpenerAt(s: string, i: number, opts: MathOptions): { kind: MathOpener } | null {
   const ch = s[i];
   if (ch === '$' && opts.dollar) {
-    if (s[i + 1] === '$') return { kind: '$$' };
     if (isEscaped(s, i)) return null;
+    if (s[i + 1] === '$') return { kind: '$$' };
     const before = s[i - 1];
     const after = s[i + 1];
     if (before !== undefined && !/\s|\p{P}/u.test(before)) return null;
@@ -84,10 +84,14 @@ export function appendMathDisplayLine(state: InternalState, line: string): Inter
       mathOpener: null,
       mathNodeId: null,
       currentNodeId: null,
+      // state.line is NOT incremented by handleBlockLine for this mode dispatch;
+      // we own the increment.
       line: state.line + 1,
     };
   }
 
+  // state.line is NOT incremented by handleBlockLine for this mode dispatch;
+  // we own the increment.
   return { ...s, line: state.line + 1 };
 }
 

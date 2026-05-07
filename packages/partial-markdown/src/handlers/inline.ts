@@ -434,6 +434,11 @@ function makeLinkReference(
   s = appendNode(s, textNode);
 
   const refsForId = s.linkRefIds.get(refId) ?? [];
+  // When the def already exists (backward resolution), set the key with the
+  // existing list (possibly empty) — this is the empty-array sentinel that
+  // marks "this label was referenced and resolved" so finish() can distinguish
+  // never-referenced defs (key absent) from resolved defs (key present, list
+  // empty). See finish.ts unused_link_def.
   s = {
     ...s,
     linkRefIds: new Map(s.linkRefIds).set(refId, existingDef ? refsForId : [...refsForId, refNodeId]),

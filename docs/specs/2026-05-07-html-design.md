@@ -89,9 +89,13 @@ export interface MarkdownHtmlBlockNode extends MarkdownNodeBase {
   /** Literal HTML source. May span multiple lines, including blank lines (kind 1). */
   raw: string;
   /** Which CommonMark start condition opened this block. 1..7. Advisory. */
-  kind: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  htmlKind: 1 | 2 | 3 | 4 | 5 | 6 | 7;
 }
 ```
+
+> **Naming note:** the field is `htmlKind` (not `kind`) on the public node.
+> The internal AST discriminant uses `kind` for the AST kind name; renaming
+> the block-condition number to `htmlKind` avoids the collision.
 
 `MarkdownInlineNode` union gains `MarkdownHtmlInlineNode`.
 `MarkdownBlockNode` union gains `MarkdownHtmlBlockNode`.
