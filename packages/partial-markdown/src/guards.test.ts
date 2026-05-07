@@ -4,6 +4,7 @@ import {
   isParagraphNode, isHeadingNode, isCompleteNode,
   isTableNode, isTableRowNode, isTableCellNode, isCitationReferenceNode,
   isMathInlineNode, isMathDisplayNode,
+  isHtmlInlineNode, isHtmlBlockNode,
 } from './guards';
 import { createPartialMarkdownParser } from './parser';
 
@@ -41,6 +42,8 @@ describe('guards — new kinds', () => {
     const cite: any = { type: 'citation-reference' };
     const inlineMath: any = { type: 'math-inline' };
     const displayMath: any = { type: 'math-display' };
+    const inlineHtml: any = { type: 'html-inline' };
+    const blockHtml: any = { type: 'html-block' };
     const para: any = { type: 'paragraph' };
     expect(isTableNode(table)).toBe(true);
     expect(isTableNode(para)).toBe(false);
@@ -52,5 +55,9 @@ describe('guards — new kinds', () => {
     expect(isMathInlineNode(para)).toBe(false);
     expect(isMathDisplayNode(displayMath)).toBe(true);
     expect(isMathDisplayNode(para)).toBe(false);
+    expect(isHtmlInlineNode(inlineHtml)).toBe(true);
+    expect(isHtmlInlineNode(para)).toBe(false);
+    expect(isHtmlBlockNode(blockHtml)).toBe(true);
+    expect(isHtmlBlockNode(para)).toBe(false);
   });
 });

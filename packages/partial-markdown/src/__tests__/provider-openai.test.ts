@@ -197,4 +197,32 @@ describe('OpenAI-shaped Markdown streams', () => {
     expect(inlineMath.text).toBe('e^{i\\pi}+1=0');
     expect(parser.root!.children[1]).toMatchObject({ type: 'math-display', text: '\\sum_i x_i' });
   });
+
+  it('parses raw HTML in output_text deltas', () => {
+    const parsers = feedOpenAIMarkdown([
+      {
+        type: 'response.output_text.delta',
+        item_id: 'msg_html',
+        output_index: 0,
+        delta: 'Use <kbd>Cmd</kbd>.\n',
+      },
+      {
+        type: 'response.output_text.delta',
+        item_id: 'msg_html',
+        output_index: 0,
+        delta: '<details>\n<summary>More</summary>\n\n',
+      },
+    ]);
+
+    const parser = parsers.get('msg_html')!;
+    parser.finish();
+    const paragraph = parser.root!.children[0] as any;
+    const inlineHtml = paragraph.children.filter((node: any) => node.type === 'html-inline');
+    expect(inlineHtml.map((node: any) => node.raw)).toEqual(['<kbd>', '</kbd>']);
+    expect(parser.root!.children[1]).toMatchObject({
+      type: 'html-block',
+      htmlKind: 6,
+      raw: '<details>\n<summary>More</summary>',
+    });
+  });
 });

@@ -46,4 +46,11 @@ describe('createInternal', () => {
     const s = createInternal({ math: { dollar: false, bracket: false } });
     expect(s.options.math).toEqual({ dollar: false, bracket: false });
   });
+
+  it('initializes HTML parser state fields', () => {
+    const s = createInternal();
+    expect(s.htmlBlockKind).toBeNull();
+    expect(s.htmlBlockNodeId).toBeNull();
+    expect(s.htmlInlinePending).toBe('');
+  });
 });

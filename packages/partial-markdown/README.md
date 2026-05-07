@@ -191,6 +191,7 @@ Consumers that compare references only re-render subtrees that actually changed.
 - Pandoc-style citation definitions
 - Link reference definitions
 - Display math: `$$..$$` and `\[..\]`
+- Raw HTML blocks
 
 ### Inline
 
@@ -206,6 +207,7 @@ Consumers that compare references only re-render subtrees that actually changed.
 - Citation references
 - Link references: `[text][label]`, `[label][]`, and `[label]`
 - Inline math: `$..$` and `\(..\)`
+- Raw HTML tags, comments, declarations, processing instructions, and CDATA
 
 ## AI-Friendly Markdown Behavior
 
@@ -292,6 +294,26 @@ const parser = createPartialMarkdownParser({
 });
 ```
 
+### Raw HTML
+
+```md
+Use <kbd>Esc</kbd>.
+
+<details>
+<summary>More</summary>
+Raw HTML is captured as authored.
+```
+
+Inline HTML becomes `html-inline` nodes with `raw` source. HTML blocks become
+`html-block` nodes with `raw` source and `htmlKind`, the CommonMark block kind
+that opened the node.
+
+`raw` is unsanitized HTML. Rendering it directly as HTML is an XSS risk for
+untrusted model output. Consumers should sanitize before rendering, for example
+with DOMPurify in browser contexts or `sanitize-html` in Node contexts. For
+untrusted streams, rendering HTML nodes as escaped text is often the safest
+default.
+
 ## Guarantees
 
 `@cacheplane/partial-markdown` guarantees:
@@ -306,6 +328,7 @@ const parser = createPartialMarkdownParser({
   fields change.
 - Display math block nodes keep stable identity as their text grows line by
   line.
+- HTML block nodes keep stable identity as `raw` grows line by line.
 - Task-list item nodes keep stable identity when checked state changes.
 - Table, row, and cell references stay stable when later rows arrive.
 - Citation definitions are stored in insertion order by first-touch citation
@@ -318,7 +341,7 @@ This package does not currently support:
 
 - Multi-line link definition titles
 - Link definitions inside list items
-- HTML inline nodes or HTML block nodes
+- Raw HTML blocks inside blockquotes or list items
 - Custom Markdown extensions
 - Full CommonMark compliance
 
@@ -345,6 +368,7 @@ Current warning codes:
 'unused_link_def'
 'duplicate_link_def'
 'unterminated_math'
+'unterminated_html'
 ```
 
 Warnings are intended for diagnostics, logging, and optional UI affordances.
@@ -409,10 +433,21 @@ interface MarkdownMathDisplayNode extends MarkdownNodeBase {
   delimiter: '$$' | '\\[\\]';
 }
 
+interface MarkdownHtmlBlockNode extends MarkdownNodeBase {
+  readonly type: 'html-block';
+  raw: string;
+  htmlKind: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+}
+
 interface MarkdownMathInlineNode extends MarkdownNodeBase {
   readonly type: 'math-inline';
   text: string;
   delimiter: '$' | '\\(\\)';
+}
+
+interface MarkdownHtmlInlineNode extends MarkdownNodeBase {
+  readonly type: 'html-inline';
+  raw: string;
 }
 
 interface MarkdownImageNode extends MarkdownNodeBase {
@@ -458,6 +493,7 @@ import {
   isListItemNode,
   isCodeBlockNode,
   isMathDisplayNode,
+  isHtmlBlockNode,
   isThematicBreakNode,
   isTableNode,
   isTableRowNode,
@@ -468,6 +504,7 @@ import {
   isStrikethroughNode,
   isInlineCodeNode,
   isMathInlineNode,
+  isHtmlInlineNode,
   isLinkNode,
   isAutolinkNode,
   isImageNode,
@@ -564,6 +601,10 @@ reported as `table_overflow` in pull-style warnings.
 **A Markdown construct renders as text.**
 It may be unsupported syntax. See the limits section above.
 
+**Raw HTML rendered from an LLM is unsafe.**
+The parser preserves HTML source but does not sanitize it. Sanitize `raw` before
+rendering as HTML, or render it as escaped text for untrusted output.
+
 ## API Reference
 
 ```ts
@@ -594,6 +635,7 @@ isListNode, isListItemNode, isCodeBlockNode, isThematicBreakNode,
 isTableNode, isTableRowNode, isTableCellNode,
 isTextNode, isEmphasisNode, isStrongNode, isStrikethroughNode,
 isInlineCodeNode, isMathInlineNode, isMathDisplayNode,
+isHtmlInlineNode, isHtmlBlockNode,
 isLinkNode, isAutolinkNode, isImageNode,
 isSoftBreakNode, isHardBreakNode,
 isCitationReferenceNode, isLinkReferenceNode, isCompleteNode
@@ -606,18 +648,20 @@ MarkdownNode, MarkdownDocumentNode, MarkdownBlockNode, MarkdownInlineNode,
 MarkdownParagraphNode, MarkdownHeadingNode, MarkdownBlockquoteNode,
 MarkdownListNode, MarkdownListItemNode, MarkdownCodeBlockNode,
 MarkdownMathDisplayNode,
+MarkdownHtmlBlockNode,
 MarkdownThematicBreakNode, MarkdownTableNode, MarkdownTableRowNode,
 MarkdownTableCellNode, MarkdownCitationReferenceNode,
 MarkdownLinkReferenceNode,
 MarkdownTextNode, MarkdownEmphasisNode, MarkdownStrongNode,
 MarkdownStrikethroughNode, MarkdownInlineCodeNode, MarkdownMathInlineNode,
+MarkdownHtmlInlineNode,
 MarkdownLinkNode,
 MarkdownAutolinkNode, MarkdownImageNode, MarkdownSoftBreakNode,
 MarkdownHardBreakNode,
 StreamStatus, StreamState, StreamError, ParseEvent, ParseEventType,
 MarkdownWarning, Alignment, CitationDefinition, LinkDefinition,
 PartialMarkdownParserOptions, ResolvedParserOptions,
-AstNode, AstNodeKind, ParseMode
+AstNode, AstNodeKind, ParseMode, HtmlBlockKind
 ```
 
 ## Changelog

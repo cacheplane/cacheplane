@@ -19,21 +19,29 @@
 - New `MarkdownMathInlineNode`, `MarkdownMathDisplayNode`,
   `PartialMarkdownParserOptions`, `isMathInlineNode`, and
   `isMathDisplayNode` exports.
+- Raw HTML support for CommonMark-style inline HTML and top-level HTML blocks.
+- New `MarkdownHtmlInlineNode`, `MarkdownHtmlBlockNode`, `HtmlBlockKind`,
+  `isHtmlInlineNode`, and `isHtmlBlockNode` exports.
 - New warning codes: `unresolved_link_ref`, `unused_link_def`, and
   `duplicate_link_def`.
 - New warning code: `unterminated_math`.
+- New warning code: `unterminated_html`.
 
 ### Notes for upgraders
 
 - `MarkdownDocumentNode` now has a required `linkDefinitions` Map. Existing
   code constructing this type manually must initialize the Map.
-- Exhaustive `type` switches over inline nodes need `link-reference` and
-  `math-inline` cases. Exhaustive block-node switches need a `math-display`
-  case.
+- Exhaustive `type` switches over inline nodes need `link-reference`,
+  `math-inline`, and `html-inline` cases. Exhaustive block-node switches need
+  `math-display` and `html-block` cases.
 - Math is enabled by default. Consumers that treat dollar-bracket text
   literally can pass
   `createPartialMarkdownParser({ math: { dollar: false, bracket: false } })`.
 - Inline math is recognized when its containing line is committed.
+- HTML `raw` is unsanitized source. Consumers rendering untrusted model output
+  as HTML must sanitize or escape it.
+- Top-level HTML blocks are supported in this slice; raw HTML blocks inside
+  blockquotes or list items remain unsupported.
 - Multi-line link definition titles remain unsupported and are parsed as
   regular paragraph content after the first line.
 

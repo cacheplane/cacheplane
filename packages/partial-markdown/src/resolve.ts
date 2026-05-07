@@ -167,6 +167,14 @@ function buildNode(
       node = { id, type: 'math-display', status, parent, index, text: ast.text, delimiter: ast.delimiter };
       break;
     }
+    case 'html-inline': {
+      node = { id, type: 'html-inline', status, parent, index, raw: ast.raw };
+      break;
+    }
+    case 'html-block': {
+      node = { id, type: 'html-block', status, parent, index, raw: ast.raw, htmlKind: ast.htmlKind };
+      break;
+    }
     case 'autolink': {
       node = { id, type: 'autolink', status, parent, index, url: ast.url, text: ast.text };
       break;

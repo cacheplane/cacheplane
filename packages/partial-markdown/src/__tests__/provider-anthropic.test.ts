@@ -158,4 +158,33 @@ describe('Anthropic-shaped Markdown streams', () => {
     expect(math).toMatchObject({ text: 'a+b', delimiter: '$' });
     expect(parsers.has(1)).toBe(false);
   });
+
+  it('parses raw HTML in text deltas while ignoring tool JSON', () => {
+    const parsers = feedAnthropicMarkdown([
+      {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'text_delta', text: '<!-- author ' },
+      },
+      {
+        type: 'content_block_delta',
+        index: 2,
+        delta: { type: 'input_json_delta', partial_json: '{"ignored":true}' },
+      },
+      {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'text_delta', text: 'note -->\n' },
+      },
+    ]);
+
+    const parser = parsers.get(0)!;
+    parser.finish();
+    expect(parser.root!.children[0]).toMatchObject({
+      type: 'html-block',
+      htmlKind: 2,
+      raw: '<!-- author note -->',
+    });
+    expect(parsers.has(2)).toBe(false);
+  });
 });
