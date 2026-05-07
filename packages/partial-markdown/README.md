@@ -285,6 +285,11 @@ Inline math becomes `math-inline` nodes with opaque `text` and a `delimiter`
 field. Inline math is recognized when its containing line is committed, which
 matches the parser's existing line-buffered inline parsing model.
 
+> **Note:** Inline math (`$..$`, `\(..\)`) is committed when the containing
+> line completes — inline nodes are born with `status: 'complete'`. Display
+> math (`$$..$$`, `\[..\]`) streams character-by-character with the full
+> `streaming → complete` arc and preserves node identity across pushes.
+
 Display math becomes `math-display` block nodes. `$$..$$` and `\[..\]`
 delimiter families are enabled by default and can be disabled independently:
 
@@ -308,11 +313,34 @@ Inline HTML becomes `html-inline` nodes with `raw` source. HTML blocks become
 `html-block` nodes with `raw` source and `htmlKind`, the CommonMark block kind
 that opened the node.
 
-`raw` is unsanitized HTML. Rendering it directly as HTML is an XSS risk for
-untrusted model output. Consumers should sanitize before rendering, for example
-with DOMPurify in browser contexts or `sanitize-html` in Node contexts. For
-untrusted streams, rendering HTML nodes as escaped text is often the safest
-default.
+### Security — sanitize before rendering
+
+`raw` is unsanitized HTML source. Rendering it directly via
+`dangerouslySetInnerHTML` (or any equivalent) is an XSS risk for untrusted
+model output. Sanitize first:
+
+```tsx
+import DOMPurify from 'dompurify';
+
+if (node.type === 'html-block' || node.type === 'html-inline') {
+  return (
+    <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(node.raw) }} />
+  );
+}
+```
+
+For untrusted streaming output where you cannot guarantee sanitization at
+every render, render HTML nodes as escaped text instead:
+
+```tsx
+if (node.type === 'html-block' || node.type === 'html-inline') {
+  return <code>{node.raw}</code>;
+}
+```
+
+Server-side / Node consumers can use [`sanitize-html`](https://www.npmjs.com/package/sanitize-html)
+or [`rehype-sanitize`](https://github.com/rehypejs/rehype-sanitize) for the
+same purpose.
 
 ## Guarantees
 

@@ -213,6 +213,18 @@ Each math node streams via the same pattern as fenced code:
 3. **Close** — closer token matched; status flips to `complete`,
    `'node-completed'` emitted.
 
+#### Implementation note (0.4.0): inline math is born `complete`
+
+In 0.4.0 the inline scanner is **line-buffered**: inline math nodes are
+created only after the full line is available, so they are born with
+`status: 'complete'`. The `streaming → complete` arc described above
+applies fully to display math (`$$..$$`, `\[..\]`) but not to inline math
+in the current implementation.
+
+Identity preservation is unaffected — inline nodes are still stable across
+re-pushes since the line is committed atomically. The streaming arc for
+inline math is tracked as a 0.5.0 follow-up.
+
 Chunk boundary cases (must be tested):
 
 | Boundary | Behavior |
