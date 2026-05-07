@@ -8,12 +8,14 @@ import type {
   MarkdownListNode,
   MarkdownListItemNode,
   MarkdownCodeBlockNode,
+  MarkdownMathDisplayNode,
   MarkdownThematicBreakNode,
   MarkdownTextNode,
   MarkdownEmphasisNode,
   MarkdownStrongNode,
   MarkdownStrikethroughNode,
   MarkdownInlineCodeNode,
+  MarkdownMathInlineNode,
   MarkdownLinkNode,
   MarkdownAutolinkNode,
   MarkdownImageNode,
@@ -33,12 +35,14 @@ export function isBlockquoteNode(n: MarkdownNode): n is MarkdownBlockquoteNode {
 export function isListNode(n: MarkdownNode): n is MarkdownListNode { return n.type === 'list'; }
 export function isListItemNode(n: MarkdownNode): n is MarkdownListItemNode { return n.type === 'list-item'; }
 export function isCodeBlockNode(n: MarkdownNode): n is MarkdownCodeBlockNode { return n.type === 'code-block'; }
+export function isMathDisplayNode(n: MarkdownNode): n is MarkdownMathDisplayNode { return n.type === 'math-display'; }
 export function isThematicBreakNode(n: MarkdownNode): n is MarkdownThematicBreakNode { return n.type === 'thematic-break'; }
 export function isTextNode(n: MarkdownNode): n is MarkdownTextNode { return n.type === 'text'; }
 export function isEmphasisNode(n: MarkdownNode): n is MarkdownEmphasisNode { return n.type === 'emphasis'; }
 export function isStrongNode(n: MarkdownNode): n is MarkdownStrongNode { return n.type === 'strong'; }
 export function isStrikethroughNode(n: MarkdownNode): n is MarkdownStrikethroughNode { return n.type === 'strikethrough'; }
 export function isInlineCodeNode(n: MarkdownNode): n is MarkdownInlineCodeNode { return n.type === 'inline-code'; }
+export function isMathInlineNode(n: MarkdownNode): n is MarkdownMathInlineNode { return n.type === 'math-inline'; }
 export function isLinkNode(n: MarkdownNode): n is MarkdownLinkNode { return n.type === 'link'; }
 export function isAutolinkNode(n: MarkdownNode): n is MarkdownAutolinkNode { return n.type === 'autolink'; }
 export function isImageNode(n: MarkdownNode): n is MarkdownImageNode { return n.type === 'image'; }

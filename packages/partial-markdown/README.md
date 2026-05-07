@@ -82,10 +82,11 @@ The document root also exposes:
 
 ```ts
 citations: Map<string, CitationDefinition>
+linkDefinitions: Map<string, LinkDefinition>
 ```
 
-Citation definitions are lifted out of the visible block tree and stored on the
-root.
+Citation and link-reference definitions are lifted out of the visible block
+tree and stored on the root.
 
 ## Push-Style API
 
@@ -189,6 +190,7 @@ Consumers that compare references only re-render subtrees that actually changed.
 - GFM tables
 - Pandoc-style citation definitions
 - Link reference definitions
+- Display math: `$$..$$` and `\[..\]`
 
 ### Inline
 
@@ -203,6 +205,7 @@ Consumers that compare references only re-render subtrees that actually changed.
 - Soft and hard line breaks
 - Citation references
 - Link references: `[text][label]`, `[label][]`, and `[label]`
+- Inline math: `$..$` and `\(..\)`
 
 ## AI-Friendly Markdown Behavior
 
@@ -266,6 +269,29 @@ nodes. Definitions are lifted into `root.linkDefinitions` and keyed by
 normalized label. If a definition arrives after a reference, the existing
 reference node mutates in place with `resolved: true`, `url`, and `title`.
 
+### Math
+
+```md
+Inline math uses $a+b$ or \(a+b\).
+
+$$
+\sum_i x_i
+$$
+```
+
+Inline math becomes `math-inline` nodes with opaque `text` and a `delimiter`
+field. Inline math is recognized when its containing line is committed, which
+matches the parser's existing line-buffered inline parsing model.
+
+Display math becomes `math-display` block nodes. `$$..$$` and `\[..\]`
+delimiter families are enabled by default and can be disabled independently:
+
+```ts
+const parser = createPartialMarkdownParser({
+  math: { dollar: false, bracket: true },
+});
+```
+
 ## Guarantees
 
 `@cacheplane/partial-markdown` guarantees:
@@ -278,6 +304,8 @@ reference node mutates in place with `resolved: true`, `url`, and `title`.
 - Citation references keep stable identity when their `resolved` flag changes.
 - Link references keep stable identity when their `resolved`, `url`, or `title`
   fields change.
+- Display math block nodes keep stable identity as their text grows line by
+  line.
 - Task-list item nodes keep stable identity when checked state changes.
 - Table, row, and cell references stay stable when later rows arrive.
 - Citation definitions are stored in insertion order by first-touch citation
@@ -291,7 +319,6 @@ This package does not currently support:
 - Multi-line link definition titles
 - Link definitions inside list items
 - HTML inline nodes or HTML block nodes
-- Math
 - Custom Markdown extensions
 - Full CommonMark compliance
 
@@ -317,6 +344,7 @@ Current warning codes:
 'unresolved_link_ref'
 'unused_link_def'
 'duplicate_link_def'
+'unterminated_math'
 ```
 
 Warnings are intended for diagnostics, logging, and optional UI affordances.
@@ -375,6 +403,18 @@ interface MarkdownCodeBlockNode extends MarkdownNodeBase {
   text: string;
 }
 
+interface MarkdownMathDisplayNode extends MarkdownNodeBase {
+  readonly type: 'math-display';
+  text: string;
+  delimiter: '$$' | '\\[\\]';
+}
+
+interface MarkdownMathInlineNode extends MarkdownNodeBase {
+  readonly type: 'math-inline';
+  text: string;
+  delimiter: '$' | '\\(\\)';
+}
+
 interface MarkdownImageNode extends MarkdownNodeBase {
   readonly type: 'image';
   url: string;
@@ -417,6 +457,7 @@ import {
   isListNode,
   isListItemNode,
   isCodeBlockNode,
+  isMathDisplayNode,
   isThematicBreakNode,
   isTableNode,
   isTableRowNode,
@@ -426,6 +467,7 @@ import {
   isStrongNode,
   isStrikethroughNode,
   isInlineCodeNode,
+  isMathInlineNode,
   isLinkNode,
   isAutolinkNode,
   isImageNode,
@@ -526,7 +568,7 @@ It may be unsupported syntax. See the limits section above.
 
 ```ts
 // Push-style
-createPartialMarkdownParser(): PartialMarkdownParser
+createPartialMarkdownParser(options?: PartialMarkdownParserOptions): PartialMarkdownParser
 
 interface PartialMarkdownParser {
   push(chunk: string): ParseEvent[];
@@ -538,7 +580,7 @@ interface PartialMarkdownParser {
 materialize(node: MarkdownNode | null): unknown;
 
 // Pull-style
-create(): StreamState;
+create(options?: PartialMarkdownParserOptions): StreamState;
 push(state: StreamState, chunk: string): StreamState;
 finish(state: StreamState): StreamState;
 resolve(state: StreamState): unknown;
@@ -551,7 +593,8 @@ isDocumentNode, isParagraphNode, isHeadingNode, isBlockquoteNode,
 isListNode, isListItemNode, isCodeBlockNode, isThematicBreakNode,
 isTableNode, isTableRowNode, isTableCellNode,
 isTextNode, isEmphasisNode, isStrongNode, isStrikethroughNode,
-isInlineCodeNode, isLinkNode, isAutolinkNode, isImageNode,
+isInlineCodeNode, isMathInlineNode, isMathDisplayNode,
+isLinkNode, isAutolinkNode, isImageNode,
 isSoftBreakNode, isHardBreakNode,
 isCitationReferenceNode, isLinkReferenceNode, isCompleteNode
 ```
@@ -562,15 +605,18 @@ Exported types:
 MarkdownNode, MarkdownDocumentNode, MarkdownBlockNode, MarkdownInlineNode,
 MarkdownParagraphNode, MarkdownHeadingNode, MarkdownBlockquoteNode,
 MarkdownListNode, MarkdownListItemNode, MarkdownCodeBlockNode,
+MarkdownMathDisplayNode,
 MarkdownThematicBreakNode, MarkdownTableNode, MarkdownTableRowNode,
 MarkdownTableCellNode, MarkdownCitationReferenceNode,
 MarkdownLinkReferenceNode,
 MarkdownTextNode, MarkdownEmphasisNode, MarkdownStrongNode,
-MarkdownStrikethroughNode, MarkdownInlineCodeNode, MarkdownLinkNode,
+MarkdownStrikethroughNode, MarkdownInlineCodeNode, MarkdownMathInlineNode,
+MarkdownLinkNode,
 MarkdownAutolinkNode, MarkdownImageNode, MarkdownSoftBreakNode,
 MarkdownHardBreakNode,
 StreamStatus, StreamState, StreamError, ParseEvent, ParseEventType,
 MarkdownWarning, Alignment, CitationDefinition, LinkDefinition,
+PartialMarkdownParserOptions, ResolvedParserOptions,
 AstNode, AstNodeKind, ParseMode
 ```
 

@@ -23,6 +23,22 @@ export type StreamStatus = 'pending' | 'streaming' | 'complete';
 
 export type Alignment = 'left' | 'center' | 'right' | null;
 
+export interface PartialMarkdownParserOptions {
+  math?: {
+    /** Recognize $..$ and $$..$$. Default: true. */
+    dollar?: boolean;
+    /** Recognize \(..\) and \[..\]. Default: true. */
+    bracket?: boolean;
+  };
+}
+
+export interface ResolvedParserOptions {
+  math: {
+    dollar: boolean;
+    bracket: boolean;
+  };
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Pull-style internal state machine
 // ────────────────────────────────────────────────────────────────────────────
@@ -40,6 +56,8 @@ export type ParseMode =
   | 'table-row'
   | 'citation-def'
   | 'link-def-title'
+  | 'math-inline'
+  | 'math-display'
   | 'done'
   | 'error';
 
@@ -63,7 +81,8 @@ export interface MarkdownWarning {
     | 'malformed_table_alignment'
     | 'unresolved_link_ref'
     | 'unused_link_def'
-    | 'duplicate_link_def';
+    | 'duplicate_link_def'
+    | 'unterminated_math';
   index: number;
   detail?: string;
 }
@@ -91,7 +110,9 @@ export type AstNodeKind =
   | 'table-row'
   | 'table-cell'
   | 'citation-reference'
-  | 'link-reference';
+  | 'link-reference'
+  | 'math-inline'
+  | 'math-display';
 
 interface AstNodeBase {
   id: number;
@@ -241,6 +262,18 @@ export interface LinkReferenceAstNode extends AstNodeBase {
   title: string;
 }
 
+export interface MathInlineAstNode extends AstNodeBase {
+  kind: 'math-inline';
+  text: string;
+  delimiter: '$' | '\\(\\)';
+}
+
+export interface MathDisplayAstNode extends AstNodeBase {
+  kind: 'math-display';
+  text: string;
+  delimiter: '$$' | '\\[\\]';
+}
+
 export type AstNode =
   | DocumentAstNode
   | ParagraphAstNode
@@ -264,7 +297,9 @@ export type AstNode =
   | TableRowAstNode
   | TableCellAstNode
   | CitationReferenceAstNode
-  | LinkReferenceAstNode;
+  | LinkReferenceAstNode
+  | MathInlineAstNode
+  | MathDisplayAstNode;
 
 export interface StreamState {
   nodes: AstNode[];
@@ -289,6 +324,11 @@ export interface InternalState extends StreamState {
   textBuffer: string;
   /** Active node id at the deepest level of the parser, if any. */
   currentNodeId: number | null;
+  options: ResolvedParserOptions;
+  /** When in math mode, which opener was used so we know how to close. */
+  mathOpener: '$' | '$$' | '\\(' | '\\[' | null;
+  /** Currently open math node id, if any. */
+  mathNodeId: number | null;
   /** Map of citation id → 1-based parser-assigned index. Stable across the parse. */
   citationIndex: Map<string, number>;
   /** Map of citation id → AstNode ids of references encountered for that id. */
@@ -385,6 +425,12 @@ export interface MarkdownCodeBlockNode extends MarkdownNodeBase {
   text: string;
 }
 
+export interface MarkdownMathDisplayNode extends MarkdownNodeBase {
+  readonly type: 'math-display';
+  text: string;
+  delimiter: '$$' | '\\[\\]';
+}
+
 export interface MarkdownThematicBreakNode extends MarkdownNodeBase {
   readonly type: 'thematic-break';
 }
@@ -412,6 +458,12 @@ export interface MarkdownStrikethroughNode extends MarkdownNodeBase {
 export interface MarkdownInlineCodeNode extends MarkdownNodeBase {
   readonly type: 'inline-code';
   text: string;
+}
+
+export interface MarkdownMathInlineNode extends MarkdownNodeBase {
+  readonly type: 'math-inline';
+  text: string;
+  delimiter: '$' | '\\(\\)';
 }
 
 export interface MarkdownLinkNode extends MarkdownNodeBase {
@@ -504,6 +556,7 @@ export type MarkdownBlockNode =
   | MarkdownBlockquoteNode
   | MarkdownListNode
   | MarkdownCodeBlockNode
+  | MarkdownMathDisplayNode
   | MarkdownThematicBreakNode
   | MarkdownTableNode;
 
@@ -513,6 +566,7 @@ export type MarkdownInlineNode =
   | MarkdownStrongNode
   | MarkdownStrikethroughNode
   | MarkdownInlineCodeNode
+  | MarkdownMathInlineNode
   | MarkdownLinkNode
   | MarkdownAutolinkNode
   | MarkdownImageNode

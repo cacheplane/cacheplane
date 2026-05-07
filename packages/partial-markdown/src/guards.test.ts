@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isParagraphNode, isHeadingNode, isCompleteNode,
   isTableNode, isTableRowNode, isTableCellNode, isCitationReferenceNode,
+  isMathInlineNode, isMathDisplayNode,
 } from './guards';
 import { createPartialMarkdownParser } from './parser';
 
@@ -38,6 +39,8 @@ describe('guards — new kinds', () => {
     const row: any = { type: 'table-row' };
     const cell: any = { type: 'table-cell' };
     const cite: any = { type: 'citation-reference' };
+    const inlineMath: any = { type: 'math-inline' };
+    const displayMath: any = { type: 'math-display' };
     const para: any = { type: 'paragraph' };
     expect(isTableNode(table)).toBe(true);
     expect(isTableNode(para)).toBe(false);
@@ -45,5 +48,9 @@ describe('guards — new kinds', () => {
     expect(isTableCellNode(cell)).toBe(true);
     expect(isCitationReferenceNode(cite)).toBe(true);
     expect(isCitationReferenceNode(para)).toBe(false);
+    expect(isMathInlineNode(inlineMath)).toBe(true);
+    expect(isMathInlineNode(para)).toBe(false);
+    expect(isMathDisplayNode(displayMath)).toBe(true);
+    expect(isMathDisplayNode(para)).toBe(false);
   });
 });

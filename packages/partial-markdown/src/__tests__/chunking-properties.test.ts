@@ -20,6 +20,7 @@ describe('chunk partition equivalence', () => {
     '| A | B |\n| --- | ---: |\n| left | right |\n',
     'See [^src1].\n\n[^src1]: Source title <https://example.com>\n',
     'See [docs][guide] and [guide].\n\n[guide]: https://example.com "Guide"\n',
+    'Result is $a+b$.\n\n$$\n\\sum_i x_i\n$$\n',
   ];
 
   for (const input of samples) {

@@ -12,14 +12,28 @@
   matching definition arrives later in the stream.
 - New `MarkdownLinkReferenceNode`, `LinkDefinition`, and
   `isLinkReferenceNode` exports.
+- Inline math support for `$..$` and `\(..\)` via `math-inline` nodes.
+- Display math support for `$$..$$` and `\[..\]` via `math-display` block
+  nodes.
+- Parser options for disabling dollar or bracket math delimiter families.
+- New `MarkdownMathInlineNode`, `MarkdownMathDisplayNode`,
+  `PartialMarkdownParserOptions`, `isMathInlineNode`, and
+  `isMathDisplayNode` exports.
 - New warning codes: `unresolved_link_ref`, `unused_link_def`, and
   `duplicate_link_def`.
+- New warning code: `unterminated_math`.
 
 ### Notes for upgraders
 
 - `MarkdownDocumentNode` now has a required `linkDefinitions` Map. Existing
   code constructing this type manually must initialize the Map.
-- Exhaustive `type` switches over inline nodes need a `link-reference` case.
+- Exhaustive `type` switches over inline nodes need `link-reference` and
+  `math-inline` cases. Exhaustive block-node switches need a `math-display`
+  case.
+- Math is enabled by default. Consumers that treat dollar-bracket text
+  literally can pass
+  `createPartialMarkdownParser({ math: { dollar: false, bracket: false } })`.
+- Inline math is recognized when its containing line is committed.
 - Multi-line link definition titles remain unsupported and are parsed as
   regular paragraph content after the first line.
 

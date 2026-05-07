@@ -159,6 +159,14 @@ function buildNode(
       node = { id, type: 'inline-code', status, parent, index, text: ast.text };
       break;
     }
+    case 'math-inline': {
+      node = { id, type: 'math-inline', status, parent, index, text: ast.text, delimiter: ast.delimiter };
+      break;
+    }
+    case 'math-display': {
+      node = { id, type: 'math-display', status, parent, index, text: ast.text, delimiter: ast.delimiter };
+      break;
+    }
     case 'autolink': {
       node = { id, type: 'autolink', status, parent, index, url: ast.url, text: ast.text };
       break;

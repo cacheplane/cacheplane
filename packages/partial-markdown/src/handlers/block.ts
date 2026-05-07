@@ -5,6 +5,7 @@ import type {
   ThematicBreakAstNode,
   ParagraphAstNode,
   CodeBlockAstNode,
+  MathDisplayAstNode,
   BlockquoteAstNode,
   ListAstNode,
   ListItemAstNode,
@@ -37,9 +38,19 @@ import {
 } from '../internals';
 import type { LineMeasurement } from '../internals';
 import { parseInline } from './inline';
+import {
+  appendMathDisplayLine,
+  displayDelimiter,
+  findMathCloser,
+  isMathOpenerAt,
+  openerLength,
+} from './math';
 
 export function handleBlockLine(state: InternalState, line: string): InternalState {
   if (state.mode === 'code-fence') return handleCodeFenceLine(state, line);
+  if (state.mode === 'math-display') {
+    return appendMathDisplayLine({ ...state, lineBuffer: '' }, line);
+  }
 
   // If we have a pending table-header candidate, this line decides:
   //   - alignment row → promote candidate to table
@@ -96,6 +107,13 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
     s = closeOpenParagraph(s);
     s = closeOpenList(s);
     return openFencedCodeBlock(s, fence[1] as '```' | '~~~', fence[2] ?? '');
+  }
+
+  const displayMath = displayMathOpener(line, s.options.math);
+  if (displayMath) {
+    s = closeOpenParagraph(s);
+    s = closeOpenList(s);
+    return openDisplayMath(s, line, displayMath.start, displayMath.kind);
   }
 
   // Measure indentation + detect list marker with a single pass.
@@ -235,6 +253,47 @@ function handleCodeFenceLine(state: InternalState, line: string): InternalState 
   const nodes = state.nodes.slice();
   nodes[id] = updated;
   return { ...state, nodes, line: state.line + 1 };
+}
+
+function displayMathOpener(
+  line: string,
+  options: InternalState['options']['math'],
+): { start: number; kind: '$$' | '\\[' } | null {
+  const match = /^ {0,3}/.exec(line);
+  const start = match?.[0].length ?? 0;
+  const opener = isMathOpenerAt(line, start, options);
+  if (!opener || (opener.kind !== '$$' && opener.kind !== '\\[')) return null;
+  return { start, kind: opener.kind };
+}
+
+function openDisplayMath(
+  state: InternalState,
+  line: string,
+  openerStart: number,
+  kind: '$$' | '\\[',
+): InternalState {
+  const docId = state.rootId!;
+  const bodyStart = openerStart + openerLength(kind);
+  const closer = findMathCloser(line, bodyStart, kind);
+  const text = closer >= 0 ? line.slice(bodyStart, closer) : line.slice(bodyStart);
+  const [s1, id] = allocId(state);
+  const node: MathDisplayAstNode = {
+    id,
+    kind: 'math-display',
+    parentId: docId,
+    status: closer >= 0 ? 'complete' : 'streaming',
+    text,
+    delimiter: displayDelimiter(kind),
+  };
+  let s = appendChild(appendNode(s1, node), docId, id);
+  if (closer >= 0) return s;
+  return {
+    ...s,
+    mode: 'math-display',
+    mathOpener: kind,
+    mathNodeId: id,
+    currentNodeId: id,
+  };
 }
 
 // ── Paragraph ─────────────────────────────────────────────────────────────

@@ -13,6 +13,14 @@ dollar (`$..$`, `$$..$$`) and TeX-bracket (`\(..\)`, `\[..\]`) delimiter
 families. Math content is captured as opaque text — no LaTeX parsing — and
 exposed via two new node types ready for downstream KaTeX or MathJax rendering.
 
+## 0.4.0 Implementation Note
+
+The first implementation follows the parser's existing line-buffered inline
+architecture: closed inline math is recognized when its containing line is
+committed. Display math is represented as a streaming block node and grows as
+content lines are committed. True character-by-character inline math node
+creation before a newline remains a future parser-architecture enhancement.
+
 ## Motivation
 
 The two largest LLM providers emit math in *different* delimiter conventions:

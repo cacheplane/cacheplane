@@ -46,13 +46,14 @@ import type {
   StreamStatus,
   ParseEvent,
   PartialMarkdownParser,
+  PartialMarkdownParserOptions,
   CitationDefinition,
   LinkDefinition,
 } from './types';
 
 interface NodeSnapshot {
   status: StreamStatus;
-  /** For text/inline-code/code-block: text length at last sync. */
+  /** For text-bearing leaves: text length at last sync. */
   textLen: number;
   /** For containers: number of children at last sync. */
   childrenLen: number;
@@ -62,8 +63,8 @@ interface NodeSnapshot {
 // since real ids are sequential non-negative integers starting at 0).
 const PENDING_TEXT_ID = -1;
 
-export function createPartialMarkdownParser(): PartialMarkdownParser {
-  let state: InternalState = createInternal();
+export function createPartialMarkdownParser(options?: PartialMarkdownParserOptions): PartialMarkdownParser {
+  let state: InternalState = createInternal(options);
   const mirror = new Map<number, MarkdownNode>();
   const snap = new Map<number, NodeSnapshot>();
 
@@ -157,7 +158,13 @@ export function createPartialMarkdownParser(): PartialMarkdownParser {
       const textLen = 'text' in ast ? (ast as any).text.length : 0;
       const childrenLen = 'children' in ast ? (ast as any).children.length : 0;
       const textChanged =
-        (ast.kind === 'text' || ast.kind === 'inline-code' || ast.kind === 'code-block') &&
+        (
+          ast.kind === 'text' ||
+          ast.kind === 'inline-code' ||
+          ast.kind === 'code-block' ||
+          ast.kind === 'math-inline' ||
+          ast.kind === 'math-display'
+        ) &&
         textLen !== before.textLen;
       const childrenChanged = 'children' in ast && childrenLen !== before.childrenLen;
       const statusChanged = ast.status !== before.status;
@@ -371,6 +378,11 @@ export function createPartialMarkdownParser(): PartialMarkdownParser {
         base.children = [];
         break;
       }
+      case 'math-inline':
+      case 'math-display':
+        base.text = ast.text;
+        base.delimiter = ast.delimiter;
+        break;
     }
     if (ast.kind === 'heading') base.level = ast.level;
     if (ast.kind === 'list') {

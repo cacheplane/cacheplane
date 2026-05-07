@@ -78,6 +78,22 @@ describe('materialize — new node kinds', () => {
     expect(snap.citations.get('src1')).toBeDefined();
   });
 
+  it('materializes math nodes and invalidates when display text grows', () => {
+    const p = createPartialMarkdownParser();
+    p.push('$x^2$\n\n$$\n');
+    const snap1 = materialize(p.root) as any;
+    const inlineMath = snap1.children[0].children[0];
+    const displayBefore = snap1.children[1];
+    expect(inlineMath).toMatchObject({ type: 'math-inline', text: 'x^2', delimiter: '$' });
+    expect(displayBefore).toMatchObject({ type: 'math-display', text: '', status: 'streaming' });
+
+    p.push('a+b\n');
+    const snap2 = materialize(p.root) as any;
+    expect(snap2.children[0]).toBe(snap1.children[0]);
+    expect(snap2.children[1]).not.toBe(displayBefore);
+    expect(snap2.children[1].text).toBe('a+b');
+  });
+
   it('preserves task-list-item identity across checked-flip', () => {
     // (Manual mutation simulating a stream that toggles the marker.)
     const p = createPartialMarkdownParser();
