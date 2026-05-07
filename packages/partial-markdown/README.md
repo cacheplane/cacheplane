@@ -1,28 +1,11 @@
 # @cacheplane/partial-markdown
 
-Streaming Markdown parser for incomplete input. Built for parsing the output of LLMs token by token, but works on any byte stream.
+Streaming Markdown parser for incomplete input.
 
-```ts
-import { createPartialMarkdownParser } from '@cacheplane/partial-markdown';
-
-const parser = createPartialMarkdownParser();
-parser.push('# Hello\n\nThis is **bold');   // mid-emphasis cutoff
-parser.push('** text.');
-
-const heading = parser.getByPath('/children/0');
-// { type: 'heading', level: 1, status: 'complete', ... }
-
-const paragraph = parser.getByPath('/children/1');
-// { type: 'paragraph', status: 'complete', children: [...] }
-```
-
-The parser never throws on truncation. Every node carries a `status: 'pending' | 'streaming' | 'complete'` — you can render incomplete markdown as it arrives and let nodes resolve in place.
-
-## Why
-
-Streaming LLMs emit Markdown one fragment at a time, often mid-emphasis, mid-list, or mid-table. Standard Markdown parsers want a complete document. Workarounds (re-parse on every chunk, throw away partial state) blow up your memoization and flicker the UI.
-
-This parser does the right thing: gives you a typed AST that grows in place, with stable node identity across pushes so React/Angular/Solid can use referential equality for memoization.
+Use it when an AI model, agent, editor, or network stream emits Markdown a
+chunk at a time. Standard Markdown parsers are built around complete documents.
+This parser gives you a typed Markdown tree while the document is still
+arriving, and keeps node object identity stable as later chunks update the tree.
 
 ## Install
 
@@ -30,28 +13,134 @@ This parser does the right thing: gives you a typed AST that grows in place, wit
 npm install @cacheplane/partial-markdown
 ```
 
-ESM and CJS bundled, zero runtime dependencies, side-effect free.
+Runtime and packaging:
 
-## Two APIs over one core
+- Node `>=20`
+- TypeScript declarations included
+- ESM and CJS bundled
+- Zero runtime dependencies
+- Marked side-effect free
 
-Mix freely — both produce the same node graph.
-
-### Push-style (recommended for UI streaming)
+## 30-Second Example
 
 ```ts
-import { createPartialMarkdownParser, materialize } from '@cacheplane/partial-markdown';
+import { createPartialMarkdownParser } from '@cacheplane/partial-markdown';
 
 const parser = createPartialMarkdownParser();
-parser.push(chunk);
 
-parser.root;                            // MarkdownDocumentNode (or null before any input)
-parser.getByPath('/children/0');        // JSON Pointer lookup, partial-aware
-const snapshot = materialize(parser.root);
+parser.push('# Hello\n\nThis is **bold');
+parser.push('** text.');
+parser.finish();
+
+const heading = parser.getByPath('/children/0');
+const paragraph = parser.getByPath('/children/1');
+
+console.log(heading);
+// { type: 'heading', level: 1, status: 'complete', ... }
+
+console.log(paragraph);
+// { type: 'paragraph', status: 'complete', children: [...] }
 ```
 
-`materialize()` reuses subtrees that haven't changed since the previous call, so you can snapshot on every render frame without busting downstream memoization.
+The parser does not throw just because the input ends mid-emphasis, mid-list,
+mid-table, or mid-line. Every public node carries
+`status: 'pending' | 'streaming' | 'complete'`, so a UI can render what exists
+now and let nodes resolve in place.
 
-### Pull-style (immutable state)
+## When To Use It
+
+Use `@cacheplane/partial-markdown` when you need to:
+
+- Render streamed LLM answers without reparsing the whole document on each
+  chunk.
+- Build chat, report, agent-log, notebook, or editor views over partial
+  Markdown.
+- Preserve React, Angular, Solid, or custom renderer memoization across chunks.
+- Track citations, task lists, and tables as model output grows.
+- Convert a live parser tree into plain JS snapshots without replacing
+  unchanged subtrees.
+
+It is not a full CommonMark compliance suite. It intentionally supports the
+Markdown constructs most useful for AI-generated content and developer-facing
+renderers.
+
+## Mental Model
+
+The parser builds a Markdown node tree. Nodes are mutated in place as more input
+arrives. Each node has:
+
+- `id`: stable numeric identity for the lifetime of the parser.
+- `type`: Markdown node type.
+- `status`: `pending`, `streaming`, or `complete`.
+- `parent`: parent node or `null`.
+- `index`: sibling index for most nodes.
+
+Document, block, and inline container nodes expose `children`. Leaf nodes expose
+their content directly, such as `text`, `url`, `language`, or `alt`.
+
+The document root also exposes:
+
+```ts
+citations: Map<string, CitationDefinition>
+```
+
+Citation definitions are lifted out of the visible block tree and stored on the
+root.
+
+## Push-Style API
+
+Use the push-style API for streaming UIs and long-lived node references.
+
+```ts
+import {
+  createPartialMarkdownParser,
+  materialize,
+} from '@cacheplane/partial-markdown';
+
+const parser = createPartialMarkdownParser();
+
+for await (const chunk of llmStream) {
+  const events = parser.push(chunk);
+
+  for (const event of events) {
+    if (event.type === 'value-updated') {
+      // event.node is the same object reference across future pushes.
+    }
+  }
+
+  const snapshot = materialize(parser.root);
+  render(snapshot);
+}
+
+parser.finish();
+```
+
+`push(chunk)` and `finish()` return `ParseEvent[]`:
+
+```ts
+interface ParseEvent {
+  type: 'node-created' | 'value-updated' | 'node-completed';
+  node: MarkdownNode;
+  delta?: string;
+}
+```
+
+### Path Lookup
+
+`getByPath()` accepts JSON Pointer-like paths over `children`:
+
+```ts
+parser.getByPath('');                    // root
+parser.getByPath('/children/0');         // first top-level block
+parser.getByPath('/children/1/children/0');
+```
+
+Missing paths return `null`.
+
+## Pull-Style API
+
+Use the pull-style API when you want immutable parser state, such as reducers,
+undo/redo stacks, deterministic tests, or state-machine integrations.
 
 ```ts
 import { create, push, finish, resolve } from '@cacheplane/partial-markdown';
@@ -63,31 +152,66 @@ state = finish(state);
 const tree = resolve(state);
 ```
 
-Each call returns a new state object. Useful inside reducers and undo/redo stacks.
+Each call returns a new `StreamState`. Pull-style state also exposes parser
+warnings through `state.warnings`.
 
-## Supported syntax
+## Structural-Sharing Snapshots
 
-### Block-level
+`materialize(node)` converts a parser node tree into a plain JavaScript object
+graph. It uses a `WeakMap` cache keyed by node identity, so unchanged subtrees
+return the same object reference across calls.
 
-Documents, paragraphs, headings (`#` through `######`), blockquotes (`>`), unordered lists (`-`, `*`, `+`), ordered lists (`1.`), task lists (`- [x]`, `- [ ]`), fenced code blocks (`` ``` ``), indented code blocks, thematic breaks (`---`), and GFM tables.
+```ts
+const before = materialize(parser.root);
+
+parser.push('\n- New item');
+
+const after = materialize(parser.root);
+```
+
+This is useful when rendering every animation frame or every stream chunk.
+Consumers that compare references only re-render subtrees that actually changed.
+
+## Supported Syntax
+
+### Block-Level
+
+- Documents
+- Paragraphs
+- ATX headings, `#` through `######`
+- Blockquotes
+- Unordered lists: `-`, `*`, `+`
+- Ordered lists: `1.`
+- Task lists: `- [x]`, `- [ ]`
+- Fenced code blocks
+- Indented code blocks
+- Thematic breaks
+- GFM tables
+- Pandoc-style citation definitions
 
 ### Inline
 
-Emphasis (`*x*`, `_x_`), strong (`**x**`, `__x__`), strikethrough (`~~x~~`), inline code (`` `x` ``), links (`[text](url)`), autolinks (`<https://…>`), images (`![alt](url)`), and soft / hard line breaks.
+- Text
+- Emphasis: `*x*`, `_x_`
+- Strong: `**x**`, `__x__`
+- Strikethrough: `~~x~~`
+- Inline code
+- Links
+- Autolinks
+- Images
+- Soft and hard line breaks
+- Citation references
 
-### Citations (Pandoc footnote-style)
+## AI-Friendly Markdown Behavior
 
-```md
-Some claim.[^src1]
+LLM Markdown is useful but rarely pristine. The parser is intentionally tolerant
+where AI output commonly differs from strict Markdown expectations.
 
-[^src1]: Source title <https://example.com>
-```
+### Nested Lists
 
-Inline references and block-level definitions are extracted into a `citations: Map<string, CitationDefinition>` on the document root. The parser assigns 1-based indices in first-touch order. References stream through a `resolved: false → true` flip when their matching definition arrives, preserving node identity.
-
-### Nested lists
-
-GFM-compatible. Sub-items are recognized when their marker is indented at least 2 columns past the parent's marker column or content column — whichever is more permissive. This is intentionally looser than strict CommonMark (which requires 4 spaces) because LLM output reliably uses 2-space indents.
+Nested list items are recognized when their marker is indented at least 2
+columns past the parent's marker column or content column, whichever is more
+permissive.
 
 ```md
 - Item 1
@@ -97,9 +221,11 @@ GFM-compatible. Sub-items are recognized when their marker is indented at least 
 - Item 2
 ```
 
-Tabs advance to the next 4-column tab stop. Mixed tabs and spaces are supported. Each `MarkdownListNode` exposes advisory `markerCol` / `contentCol` fields for layout-aware consumers.
+Tabs advance to the next 4-column tab stop. Mixed tabs and spaces are supported.
+Each `MarkdownListNode` exposes advisory `markerCol` and `contentCol` fields for
+layout-aware consumers.
 
-### Tables (GFM)
+### Tables
 
 ```md
 | Header | Aligned |
@@ -107,93 +233,256 @@ Tabs advance to the next 4-column tab stop. Mixed tabs and spaces are supported.
 | left   | right   |
 ```
 
-The alignment row is consumed (not retained as a node); alignment data lifts to `MarkdownTableNode.alignments`. Body rows shorter than header width are padded; overflow rows truncate with a `table_overflow` warning.
+The alignment row is consumed and not retained as a node. Alignment data is
+stored on `MarkdownTableNode.alignments`. Body rows shorter than the header are
+padded; overflow rows are truncated and produce a `table_overflow` warning in
+pull-style state.
 
-### Not yet supported
+### Citations
 
-Link reference definitions, HTML inline / blocks, math, custom syntax extensions.
+```md
+Some claim.[^src1]
 
-## Streaming identity
+[^src1]: Source title <https://example.com>
+```
 
-`materialize()` uses a `WeakMap`-backed snapshot cache that preserves object identity across frames. The following mutations preserve or correctly invalidate cached snapshots:
+Citation references become `citation-reference` inline nodes. Definitions are
+lifted into `root.citations`. References use 1-based indices in first-touch
+order. If a definition arrives after a reference, the existing reference node
+flips `resolved` from `false` to `true` in place.
 
-- **Tables** — cell, row, and table reference stability across new row appends.
-- **Citation references** — the `resolved` flag mutates in place when a matching definition arrives; `materialize()` produces a fresh snapshot wrapper.
-- **Task list items** — `task.checked` changes produce fresh snapshots.
-- **Citations Map** — iterated in insertion order; each entry is a `CitationDefinition` with stable `id`, `index`, `children`, and `status`.
+## Guarantees
 
-This means downstream `React.memo` / `OnPush` change detection only re-renders subtrees that actually changed.
+`@cacheplane/partial-markdown` guarantees:
 
-## Node shape
+- Truncated Markdown is parseable as in-progress input.
+- Public push-style node object identity is stable across pushes.
+- Node status uses the same `pending | streaming | complete` lifecycle as
+  `@cacheplane/partial-json`.
+- `materialize()` preserves references for unchanged subtrees.
+- Citation references keep stable identity when their `resolved` flag changes.
+- Task-list item nodes keep stable identity when checked state changes.
+- Table, row, and cell references stay stable when later rows arrive.
+- Citation definitions are stored in insertion order by first-touch citation
+  index.
+
+## Limits
+
+This package does not currently support:
+
+- Link reference definitions
+- HTML inline nodes or HTML block nodes
+- Math
+- Custom Markdown extensions
+- Full CommonMark compliance
+
+For unsupported syntax, prefer rendering the raw text node content or applying a
+separate post-processing pass after the stream is complete.
+
+## Warning Model
+
+Pull-style `StreamState` includes `warnings: MarkdownWarning[]`.
+
+Current warning codes:
+
+```ts
+'unterminated_construct'
+'unmatched_closer'
+'invalid_link'
+'unknown_construct'
+'unresolved_citation_ref'
+'unused_citation_def'
+'duplicate_citation_def'
+'table_overflow'
+'malformed_table_alignment'
+```
+
+Warnings are intended for diagnostics, logging, and optional UI affordances.
+They are not thrown as exceptions.
+
+## Node Shape
 
 ```ts
 interface MarkdownNodeBase {
-  readonly id: number;                                // stable identity, never changes
-  readonly type: MarkdownNodeType;                    // 'document' | 'paragraph' | 'heading' | ...
+  readonly id: number;
+  readonly type: MarkdownNodeType;
   status: 'pending' | 'streaming' | 'complete';
   parent: MarkdownNode | null;
-  index: number | null;                               // index in parent's children array
+  index: number | null;
 }
 ```
 
-Container nodes have `children` typed to whatever they're allowed to contain (e.g., `MarkdownDocumentNode.children: MarkdownBlockNode[]`, `MarkdownParagraphNode.children: MarkdownInlineNode[]`). Scalar leaves carry their content directly (e.g., `MarkdownTextNode.text`, `MarkdownCodeBlockNode.text`).
+Container nodes have typed `children` arrays:
 
-Type guards for narrowing:
+```ts
+interface MarkdownDocumentNode extends MarkdownNodeBase {
+  readonly type: 'document';
+  children: MarkdownBlockNode[];
+  citations: Map<string, CitationDefinition>;
+}
+
+interface MarkdownParagraphNode extends MarkdownNodeBase {
+  readonly type: 'paragraph';
+  children: MarkdownInlineNode[];
+}
+
+interface MarkdownListNode extends MarkdownNodeBase {
+  readonly type: 'list';
+  ordered: boolean;
+  start: number | null;
+  tight: boolean;
+  markerCol: number;
+  contentCol: number;
+  children: MarkdownListItemNode[];
+}
+```
+
+Leaf nodes carry direct content:
+
+```ts
+interface MarkdownTextNode extends MarkdownNodeBase {
+  readonly type: 'text';
+  text: string;
+}
+
+interface MarkdownCodeBlockNode extends MarkdownNodeBase {
+  readonly type: 'code-block';
+  variant: 'fenced' | 'indented';
+  language: string;
+  text: string;
+}
+
+interface MarkdownImageNode extends MarkdownNodeBase {
+  readonly type: 'image';
+  url: string;
+  title: string;
+  alt: string;
+}
+```
+
+Citation definitions:
+
+```ts
+interface CitationDefinition {
+  id: string;
+  index: number;
+  children: MarkdownInlineNode[];
+  status: 'pending' | 'streaming' | 'complete';
+}
+```
+
+## Type Guards
 
 ```ts
 import {
-  isDocumentNode, isParagraphNode, isHeadingNode, isBlockquoteNode,
-  isListNode, isListItemNode, isCodeBlockNode, isThematicBreakNode,
-  isTableNode, isTableRowNode, isTableCellNode,
-  isTextNode, isEmphasisNode, isStrongNode, isStrikethroughNode,
-  isInlineCodeNode, isLinkNode, isAutolinkNode, isImageNode,
-  isSoftBreakNode, isHardBreakNode,
-  isCitationReferenceNode, isCompleteNode,
+  isDocumentNode,
+  isParagraphNode,
+  isHeadingNode,
+  isBlockquoteNode,
+  isListNode,
+  isListItemNode,
+  isCodeBlockNode,
+  isThematicBreakNode,
+  isTableNode,
+  isTableRowNode,
+  isTableCellNode,
+  isTextNode,
+  isEmphasisNode,
+  isStrongNode,
+  isStrikethroughNode,
+  isInlineCodeNode,
+  isLinkNode,
+  isAutolinkNode,
+  isImageNode,
+  isSoftBreakNode,
+  isHardBreakNode,
+  isCitationReferenceNode,
+  isCompleteNode,
 } from '@cacheplane/partial-markdown';
 ```
 
-## Common patterns
+## Common Patterns
 
-### Render a streaming response
+### Render A Streaming Response
 
 ```ts
 const parser = createPartialMarkdownParser();
 
 for await (const chunk of llmStream) {
   parser.push(chunk);
-  render(parser.root);   // node identity stable across calls — safe for keyed renders
+  render(parser.root);
 }
 
 parser.finish();
 ```
 
-### Iterate top-level blocks
+### Iterate Top-Level Blocks
 
 ```ts
 parser.push(chunk);
+
 for (const block of parser.root?.children ?? []) {
-  if (block.type === 'heading') { /* ... */ }
+  if (block.type === 'heading') {
+    renderHeading(block);
+  }
 }
 ```
 
-### Look up a citation
+### Render Task Lists
+
+```ts
+for (const block of parser.root?.children ?? []) {
+  if (block.type !== 'list') continue;
+
+  for (const item of block.children) {
+    if (item.task) {
+      renderCheckbox(item.task.checked);
+    }
+  }
+}
+```
+
+### Look Up A Citation
 
 ```ts
 const def = parser.root?.citations.get('src1');
+
 if (def && def.status === 'complete') {
-  // def.children is the resolved citation body
+  renderCitation(def.index, def.children);
 }
 ```
 
-### Detect end of document
+### Detect End Of Document
 
 ```ts
+parser.finish();
+
 if (parser.root?.status === 'complete') {
-  // safe to materialize and discard
+  const tree = materialize(parser.root);
 }
 ```
 
-## API reference
+## Troubleshooting
+
+**`parser.root` is `null`.**
+No document root has been created yet. Push a non-empty chunk first.
+
+**A paragraph is still `streaming`.**
+The parser may still be holding the current line open. Push a newline or call
+`finish()` when the stream ends.
+
+**A citation reference is unresolved.**
+The matching definition has not arrived. If the definition later streams in, the
+same reference node flips `resolved` to `true`.
+
+**A table row has fewer or more cells than expected.**
+Rows shorter than the header are padded. Overflow cells are truncated and
+reported as `table_overflow` in pull-style warnings.
+
+**A Markdown construct renders as text.**
+It may be unsupported syntax. See the limits section above.
+
+## API Reference
 
 ```ts
 // Push-style
@@ -203,18 +492,21 @@ interface PartialMarkdownParser {
   push(chunk: string): ParseEvent[];
   finish(): ParseEvent[];
   readonly root: MarkdownDocumentNode | null;
-  getByPath(path: string): MarkdownNode | null;   // JSON Pointer (RFC 6901)
+  getByPath(path: string): MarkdownNode | null;
 }
 
-materialize(node: MarkdownNode): /* plain JS snapshot */;
+materialize(node: MarkdownNode | null): unknown;
 
 // Pull-style
 create(): StreamState;
 push(state: StreamState, chunk: string): StreamState;
 finish(state: StreamState): StreamState;
-resolve(state: StreamState): /* parsed tree */;
+resolve(state: StreamState): unknown;
+```
 
-// Type guards
+Exported type guards:
+
+```ts
 isDocumentNode, isParagraphNode, isHeadingNode, isBlockquoteNode,
 isListNode, isListItemNode, isCodeBlockNode, isThematicBreakNode,
 isTableNode, isTableRowNode, isTableCellNode,
@@ -222,8 +514,11 @@ isTextNode, isEmphasisNode, isStrongNode, isStrikethroughNode,
 isInlineCodeNode, isLinkNode, isAutolinkNode, isImageNode,
 isSoftBreakNode, isHardBreakNode,
 isCitationReferenceNode, isCompleteNode
+```
 
-// Types
+Exported types:
+
+```ts
 MarkdownNode, MarkdownDocumentNode, MarkdownBlockNode, MarkdownInlineNode,
 MarkdownParagraphNode, MarkdownHeadingNode, MarkdownBlockquoteNode,
 MarkdownListNode, MarkdownListItemNode, MarkdownCodeBlockNode,
@@ -234,8 +529,13 @@ MarkdownStrikethroughNode, MarkdownInlineCodeNode, MarkdownLinkNode,
 MarkdownAutolinkNode, MarkdownImageNode, MarkdownSoftBreakNode,
 MarkdownHardBreakNode,
 StreamStatus, StreamState, StreamError, ParseEvent, ParseEventType,
-MarkdownWarning, Alignment, CitationDefinition
+MarkdownWarning, Alignment, CitationDefinition,
+AstNode, AstNodeKind, ParseMode
 ```
+
+## Changelog
+
+See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## License
 
