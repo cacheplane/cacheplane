@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   workspace:
     name: Workspace — install + lint + typecheck
@@ -47,7 +50,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Test with coverage
-        run: pnpm --filter @cacheplane/${{ matrix.package }} run test -- --coverage
+        run: pnpm --filter @cacheplane/${{ matrix.package }} run test:coverage
 
       - name: Build
         run: pnpm --filter @cacheplane/${{ matrix.package }} build
