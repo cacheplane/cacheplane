@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-import type { InternalState } from './types';
-import { setStatus, pushWarning } from './internals';
+import type { InternalState, ParagraphAstNode, TextAstNode } from './types';
+import { setStatus, pushWarning, allocId, appendNode, appendChild } from './internals';
 import { handleBlockLine, appendOrExtendParagraph, closeOpenParagraph } from './handlers/block';
 
 export function finishInternal(state: InternalState): InternalState {
@@ -17,6 +17,50 @@ export function finishInternal(state: InternalState): InternalState {
   if (s.lineBuffer.length > 0) {
     const trailing = s.lineBuffer;
     s = handleBlockLine({ ...s, lineBuffer: '' }, trailing);
+  }
+
+  // If inline parsing left a partial HTML tag in the pending buffer
+  // (e.g. the stream ended mid-tag like "A <spa"), emit a warning and
+  // flush the held bytes as a raw text node directly — bypassing parseInline
+  // so we do NOT re-enter matchInlineHtml and re-buffer the bytes.
+  if (s.htmlInlinePending.length > 0) {
+    const flushed = s.htmlInlinePending;
+    s = pushWarning(s, {
+      code: 'unterminated_html',
+      index: s.index,
+      detail: 'unterminated inline HTML pending buffer',
+    });
+    s = { ...s, htmlInlinePending: '' };
+
+    // Ensure an open paragraph exists to attach the text node to.
+    let paraId = s.currentNodeId;
+    if (paraId === null || s.nodes[paraId]?.kind !== 'paragraph') {
+      // Open a new paragraph attached to root.
+      const [s1, newParaId] = allocId(s);
+      const para: ParagraphAstNode = {
+        id: newParaId,
+        kind: 'paragraph',
+        parentId: s.rootId!,
+        status: 'streaming',
+        children: [],
+      };
+      s = appendNode(s1, para);
+      s = appendChild(s, s.rootId!, newParaId);
+      paraId = newParaId;
+      s = { ...s, currentNodeId: paraId };
+    }
+
+    // Allocate a text node with the flushed bytes as plain text.
+    const [s2, textId] = allocId(s);
+    const textNode: TextAstNode = {
+      id: textId,
+      kind: 'text',
+      parentId: paraId,
+      status: 'complete',
+      text: flushed,
+    };
+    s = appendNode(s2, textNode);
+    s = appendChild(s, paraId, textId);
   }
 
   // Flush any pending table-header candidate as a paragraph (no warning;

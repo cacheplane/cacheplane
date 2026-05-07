@@ -76,3 +76,100 @@ describe('HTML across chunk boundaries', () => {
     expect(root.children[0]).toMatchObject({ type: 'html-block', status: 'complete' });
   });
 });
+
+describe('HTML inline pending buffer (cross-push)', () => {
+  it('mid-tag split across separate push() calls resolves to a single html-inline node', () => {
+    const p = createPartialMarkdownParser();
+    p.push('A <spa');
+    p.push('n>B</span>\n');
+    p.finish();
+
+    const para = p.root!.children[0] as any;
+    const htmls = para.children.filter((n: any) => n.type === 'html-inline');
+    expect(htmls.length).toBe(2);
+    expect(htmls[0].raw).toBe('<span>');
+    expect(htmls[1].raw).toBe('</span>');
+  });
+
+  it('buffer overflow flushes pending bytes as text (no hang)', () => {
+    const p = createPartialMarkdownParser();
+    p.push('<' + 'a'.repeat(5000));
+    p.finish();
+    expect(p.root!.children.length).toBeGreaterThan(0);
+    // Should NOT contain an html-inline node — buffer overflowed.
+    const para = p.root!.children[0] as any;
+    if (para?.children) {
+      const html = para.children.find((n: any) => n.type === 'html-inline');
+      expect(html).toBeUndefined();
+    }
+  });
+
+  it('finish() with held buffer emits unterminated_html and flushes as text', () => {
+    let state = create();
+    state = push(state, 'A <spa');
+    state = finish(state);
+
+    expect(state.warnings.some((w) => w.code === 'unterminated_html')).toBe(true);
+
+    // The flushed bytes must appear as text in the document tree.
+    const tree = resolve(state) as any;
+    const para = tree.children?.[0] as any;
+    expect(para?.type).toBe('paragraph');
+    // Concatenated text content should include "<spa"
+    const textContent = (para.children ?? [])
+      .filter((n: any) => n.type === 'text')
+      .map((n: any) => n.text).join('');
+    expect(textContent).toContain('<spa');
+
+    // The pending buffer must be empty after finish().
+    expect((state as any).htmlInlinePending).toBe('');
+  });
+
+  it('overflow during pending: > 4096 chars of `<aaa…` flushes as plain text without hanging', () => {
+    const p = createPartialMarkdownParser();
+    // Push a single chunk that puts the inline scanner into pending state
+    // and overflows the cap before any closer arrives.
+    p.push('<' + 'a'.repeat(5000) + ' rest of paragraph\n');
+    p.finish();
+
+    // Should produce a single paragraph; should NOT contain html-inline.
+    const para = p.root!.children[0] as any;
+    expect(para.type).toBe('paragraph');
+    const html = para.children.find((n: any) => n.type === 'html-inline');
+    expect(html).toBeUndefined();
+    // The literal '<' should appear in the text content somewhere.
+    const text = para.children
+      .filter((n: any) => n.type === 'text')
+      .map((n: any) => n.text).join('');
+    expect(text).toContain('<');
+  });
+});
+
+// T4
+it('captures <img onerror=...> XSS payload verbatim', () => {
+  const p = createPartialMarkdownParser();
+  p.push('<img src=x onerror=alert(1)>\n\n');
+  p.finish();
+  const blocks = p.root!.children as any[];
+  const html = blocks.find((b) => b.type === 'html-block');
+  expect(html).toBeDefined();
+  expect(html!.raw).toContain('onerror=alert(1)');
+  // <img> may be kind 6 or kind 7 depending on whether it's in the
+  // CommonMark kind-6 tag list. Whichever it is, the raw content must
+  // be captured verbatim so a downstream sanitizer can strip it.
+});
+
+// T10
+it('kind-2 comment split across chunks: <!-- com ‖ ment -->', () => {
+  const p = createPartialMarkdownParser();
+  p.push('<!-- com');
+  p.push('ment -->\n');
+  p.finish();
+  const block = p.root!.children[0] as any;
+  expect(block.type).toBe('html-block');
+  // Verify the kind discriminator. The implementation uses `htmlKind`.
+  // 2 is the comment kind.
+  const kindField = 'htmlKind' in block ? 'htmlKind' : 'kind';
+  expect(block[kindField]).toBe(2);
+  expect(block.raw).toContain('comment');
+});

@@ -629,7 +629,13 @@ export type ParseEventType = 'node-created' | 'value-updated' | 'node-completed'
 export interface ParseEvent {
   type: ParseEventType;
   node: MarkdownNode;
-  /** For value-updated on text/inline-code/code-block: characters appended this push. */
+  /**
+   * Characters appended this push. Defined for `value-updated` events on
+   * streaming text content (text, inline-code, code-block, html-block, math-display).
+   * Undefined for `value-updated` events emitted on flag mutations
+   * (e.g., `link-reference.resolved` flip, `citation-reference.resolved` flip,
+   * `task.checked` change).
+   */
   delta?: string;
 }
 

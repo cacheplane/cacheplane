@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createPartialMarkdownParser } from '../parser';
 import {
   detectHtmlBlockEnd,
   detectHtmlBlockStart,
@@ -77,9 +78,58 @@ describe('Inline HTML matchers', () => {
 });
 
 describe('Kind-6 tag list', () => {
-  it('contains representative CommonMark block tags', () => {
-    expect(HTML_BLOCK_KIND_6_TAGS).toContain('div');
-    expect(HTML_BLOCK_KIND_6_TAGS).toContain('table');
-    expect(HTML_BLOCK_KIND_6_TAGS).toContain('ul');
+  it('kind-6 tag list contains the full CommonMark §4.6 set (62 tags)', () => {
+    const expected = [
+      'address', 'article', 'aside', 'base', 'basefont', 'blockquote', 'body',
+      'caption', 'center', 'col', 'colgroup', 'dd', 'details', 'dialog', 'dir',
+      'div', 'dl', 'dt', 'fieldset', 'figcaption', 'figure', 'footer', 'form',
+      'frame', 'frameset', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'head', 'header',
+      'hr', 'html', 'iframe', 'legend', 'li', 'link', 'main', 'menu', 'menuitem',
+      'nav', 'noframes', 'ol', 'optgroup', 'option', 'p', 'param', 'search',
+      'section', 'summary', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead',
+      'title', 'tr', 'track', 'ul',
+    ];
+    for (const tag of expected) {
+      expect(HTML_BLOCK_KIND_6_TAGS).toContain(tag);
+    }
+    expect(HTML_BLOCK_KIND_6_TAGS.length).toBe(expected.length);
+  });
+});
+
+// T11
+describe('Inline HTML in non-paragraph contexts', () => {
+  it('inline HTML inside link text', () => {
+    const p = createPartialMarkdownParser();
+    p.push('See [<span>this</span>](https://x.test) link.\n');
+    p.finish();
+    const para = p.root!.children[0] as any;
+    const link = para.children.find((n: any) => n.type === 'link');
+    expect(link).toBeDefined();
+    const html = link.children.filter((n: any) => n.type === 'html-inline');
+    expect(html.length).toBe(2);
+    expect(html[0].raw).toBe('<span>');
+  });
+
+  it('inline HTML inside table cell', () => {
+    const p = createPartialMarkdownParser();
+    p.push('| h | h |\n| - | - |\n| <kbd>Ctrl</kbd> | text |\n');
+    p.finish();
+    const table = p.root!.children[0] as any;
+    const bodyRow = table.children[1];
+    const cell = bodyRow.children[0];
+    const html = cell.children.filter((n: any) => n.type === 'html-inline');
+    expect(html.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('HTML NOT parsed inside inline code span', () => {
+    const p = createPartialMarkdownParser();
+    p.push('Use `<span>foo</span>` here.\n');
+    p.finish();
+    const para = p.root!.children[0] as any;
+    const html = para.children.find((n: any) => n.type === 'html-inline');
+    expect(html).toBeUndefined();
+    const code = para.children.find((n: any) => n.type === 'inline-code');
+    expect(code).toBeDefined();
+    expect(code.text).toBe('<span>foo</span>');
   });
 });

@@ -90,27 +90,27 @@ describe('Gemini-shaped Markdown streams', () => {
     expect(ref.url).toBe('/guide');
   });
 
-  it('parses Gemini-style bracket math across candidate part text chunks', () => {
+  it('parses Gemini-style $..$ and $$..$$ math across candidate part text chunks', () => {
     const parser = feedGeminiMarkdown([
       {
-        candidates: [{ content: { parts: [{ text: 'The area is \\(' }] } }],
+        candidates: [{ content: { parts: [{ text: 'The area is $' }] } }],
       },
       {
-        candidates: [{ content: { parts: [{ text: '\\pi r^2\\).' }] } }],
+        candidates: [{ content: { parts: [{ text: '\\pi r^2$.' }] } }],
       },
       {
-        candidates: [{ content: { parts: [{ text: '\n\\[\nE=mc^2\n\\]\n' }] } }],
+        candidates: [{ content: { parts: [{ text: '\n$$\nE=mc^2\n$$\n' }] } }],
       },
     ]);
 
     parser.finish();
     const paragraph = parser.root!.children[0] as any;
     const inlineMath = paragraph.children.find((node: any) => node.type === 'math-inline');
-    expect(inlineMath).toMatchObject({ text: '\\pi r^2', delimiter: '\\(\\)' });
+    expect(inlineMath).toMatchObject({ text: '\\pi r^2', delimiter: '$' });
     expect(parser.root!.children[1]).toMatchObject({
       type: 'math-display',
       text: 'E=mc^2',
-      delimiter: '\\[\\]',
+      delimiter: '$$',
     });
   });
 

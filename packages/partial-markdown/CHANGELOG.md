@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.4.1 — 2026-05-07
+
+### Fixed
+
+- **HTML inline pending buffer.** `htmlInlinePending` is now actually used
+  for unterminated inline HTML state. When `finish()` is called with
+  partial inline HTML (e.g., `<spa` with no closing newline), the bytes
+  are flushed as a plain text node attached to the open paragraph and
+  the `unterminated_html` warning is emitted. Previously the bytes were
+  silently dropped.
+- **Math `$$` opener escape ordering.** `isMathOpenerAt` now checks the
+  backslash escape *before* the `$$` short-circuit, so `\$$` correctly
+  declines to open a display-math block.
+
+### Changed (test-only)
+
+- Math provider tests realigned with provider-native delimiter styles:
+  `provider-openai.test.ts` uses `\(..\)` / `\[..\]` (GPT style);
+  `provider-gemini.test.ts` uses `$..$` / `$$..$$` (Gemini style).
+  Production behavior unchanged.
+
+### Documentation
+
+- README HTML security section now includes a DOMPurify code example and
+  an alternative escaped-text rendering pattern.
+- Math design spec gains an "Implementation note" subsection clarifying
+  that 0.4.0 inline math is line-buffered (born `complete`); display math
+  retains the full `streaming → complete` arc. Tracked for 0.5.0.
+- HTML design spec updated to reflect the implementation's `htmlKind`
+  field name (renamed from `kind` to avoid AST-discriminant collision).
+- `ParseEvent.delta` JSDoc clarifies which event kinds carry `delta` and
+  which flag-mutation events do not.
+- `liftLinkDef` and `makeLinkReference` now carry comments explaining
+  the empty-array-sentinel pattern used by `unused_link_def` detection.
+
+### Tests
+
+- New: HTML cross-`push()` mid-tag boundary, buffer-overflow flush,
+  finish-time flush with text-node assertion, `<img onerror=...>` XSS
+  regression, kind-2 comment chunk-split, kind-6 full-tag-list assertion
+  (62 tags), inline HTML in link text and table cells, HTML NOT parsed
+  inside inline code spans.
+- New: math currency E2E paragraph-tree assertions, closer-adjacency
+  chunk boundary (`$x ‖ $`), math in heading / link / table cell / list
+  item, escaped-`$$` opener.
+- New: link-ref partition equivalence in `chunk-boundary-link-refs.test.ts`,
+  `unused_link_def` absence on resolved refs, angle-bracket URL form.
+
 ## 0.4.0 — 2026-05-07
 
 ### Added

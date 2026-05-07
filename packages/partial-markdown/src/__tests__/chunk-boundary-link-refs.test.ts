@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createPartialMarkdownParser } from '../index';
+import { representativePartitions } from './helpers/chunking';
 
 function parseChunks(chunks: string[]) {
   const parser = createPartialMarkdownParser();
@@ -47,5 +48,20 @@ describe('link references across chunk boundaries', () => {
     expect(ref.refId).toBe('foo bar');
     expect(ref.resolved).toBe(true);
     expect(parser.root!.linkDefinitions.has('foo bar')).toBe(true);
+  });
+
+  it('partition equivalence across all representative partitions', () => {
+    const input = 'See [hello][world] and [bare].\n[world]: /w\n[bare]: /b "B"\n';
+    const baseline = (() => {
+      const p = createPartialMarkdownParser();
+      p.push(input); p.finish();
+      return p.root!.linkDefinitions.size;
+    })();
+    for (const partition of representativePartitions(input)) {
+      const p = createPartialMarkdownParser();
+      for (const c of partition) p.push(c);
+      p.finish();
+      expect(p.root!.linkDefinitions.size).toBe(baseline);
+    }
   });
 });

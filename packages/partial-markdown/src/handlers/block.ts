@@ -878,7 +878,9 @@ function liftLinkDef(
         } as LinkReferenceAstNode;
       }
     }
-    // Keep an empty touched entry so finish() can distinguish used defs from unused defs.
+    // Empty-array sentinel: marks "this label was referenced and resolved"
+    // so finish() can distinguish never-referenced defs (key absent) from
+    // resolved defs (key present, list empty). See finish.ts unused_link_def.
     s = { ...s, nodes, linkRefIds: new Map(s.linkRefIds).set(id, []) };
   }
 

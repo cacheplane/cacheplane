@@ -168,25 +168,25 @@ describe('OpenAI-shaped Markdown streams', () => {
     expect(ref.title).toBe('Docs');
   });
 
-  it('parses streamed math in output_text deltas', () => {
+  it('parses GPT-style \\(..\\) and \\[..\\] math in output_text deltas', () => {
     const parsers = feedOpenAIMarkdown([
       {
         type: 'response.output_text.delta',
         item_id: 'msg_math',
         output_index: 0,
-        delta: 'Euler: $e^{',
+        delta: 'Euler: \\(e^{',
       },
       {
         type: 'response.output_text.delta',
         item_id: 'msg_math',
         output_index: 0,
-        delta: 'i\\pi}+1=0$.\n',
+        delta: 'i\\pi}+1=0\\).\n',
       },
       {
         type: 'response.output_text.delta',
         item_id: 'msg_math',
         output_index: 0,
-        delta: '$$\n\\sum_i x_i\n$$\n',
+        delta: '\\[\n\\sum_i x_i\n\\]\n',
       },
     ]);
 
@@ -194,8 +194,12 @@ describe('OpenAI-shaped Markdown streams', () => {
     parser.finish();
     const paragraph = parser.root!.children[0] as any;
     const inlineMath = paragraph.children.find((node: any) => node.type === 'math-inline');
-    expect(inlineMath.text).toBe('e^{i\\pi}+1=0');
-    expect(parser.root!.children[1]).toMatchObject({ type: 'math-display', text: '\\sum_i x_i' });
+    expect(inlineMath).toMatchObject({ text: 'e^{i\\pi}+1=0', delimiter: '\\(\\)' });
+    expect(parser.root!.children[1]).toMatchObject({
+      type: 'math-display',
+      text: '\\sum_i x_i',
+      delimiter: '\\[\\]',
+    });
   });
 
   it('parses raw HTML in output_text deltas', () => {

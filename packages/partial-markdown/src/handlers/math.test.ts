@@ -102,3 +102,106 @@ describe('math parser integration', () => {
     expect(math.status).toBe('complete');
   });
 });
+
+// T6
+describe('Math currency rejection (E2E paragraph tree)', () => {
+  it('It costs $5 → no math node', () => {
+    const p = createPartialMarkdownParser();
+    p.push('It costs $5.\n');
+    p.finish();
+    const para = p.root!.children[0] as any;
+    const math = para.children.find((n: any) => n.type === 'math-inline');
+    expect(math).toBeUndefined();
+  });
+
+  it('Items: $5, $10 → no math nodes', () => {
+    const p = createPartialMarkdownParser();
+    p.push('Items: $5, $10.\n');
+    p.finish();
+    const para = p.root!.children[0] as any;
+    const math = para.children.filter((n: any) => n.type === 'math-inline');
+    expect(math.length).toBe(0);
+  });
+
+  it('Items: $1.50 and $2.99 → no math nodes', () => {
+    const p = createPartialMarkdownParser();
+    p.push('Items: $1.50 and $2.99.\n');
+    p.finish();
+    const para = p.root!.children[0] as any;
+    const math = para.children.filter((n: any) => n.type === 'math-inline');
+    expect(math.length).toBe(0);
+  });
+});
+
+// C2
+it('\\$$ does not open math-display (escaped opener)', () => {
+  const p = createPartialMarkdownParser();
+  p.push('a \\$$x$$ b\n');
+  p.finish();
+  // The first $ is escaped by \, so \$$ is a literal $ followed by a
+  // standalone $. The leading \$$ does NOT open a $$...$$ display block.
+  const root = p.root!;
+  const firstChild = root.children[0] as any;
+  expect(firstChild.type).not.toBe('math-display');
+});
+
+// T8
+describe('Math in non-paragraph inline contexts', () => {
+  it('math inside link text', () => {
+    const p = createPartialMarkdownParser();
+    p.push('Click [solve $x^2$ now](url) here.\n');
+    p.finish();
+    const para = p.root!.children[0] as any;
+    const link = para.children.find((n: any) => n.type === 'link');
+    expect(link).toBeDefined();
+    const math = link.children.find((n: any) => n.type === 'math-inline');
+    expect(math).toBeDefined();
+    expect(math.text).toBe('x^2');
+  });
+
+  it('math inside heading', () => {
+    const p = createPartialMarkdownParser();
+    p.push('# The $x^2$ identity\n');
+    p.finish();
+    const heading = p.root!.children[0] as any;
+    const math = heading.children.find((n: any) => n.type === 'math-inline');
+    expect(math).toBeDefined();
+    expect(math.text).toBe('x^2');
+  });
+
+  it('math inside table cell', () => {
+    const p = createPartialMarkdownParser();
+    p.push('| h | h |\n| - | - |\n| $x^2$ | y |\n');
+    p.finish();
+    const table = p.root!.children[0] as any;
+    const bodyRow = table.children[1];  // body rows after header
+    const cell = bodyRow.children[0];
+    const math = cell.children.find((n: any) => n.type === 'math-inline');
+    expect(math).toBeDefined();
+  });
+
+  it('math inside list item', () => {
+    const p = createPartialMarkdownParser();
+    p.push('- Solve $x^2 = 4$\n');
+    p.finish();
+    const list = p.root!.children[0] as any;
+    const item = list.children[0];
+    const itemPara = item.children[0];
+    const math = itemPara.children.find((n: any) => n.type === 'math-inline');
+    expect(math).toBeDefined();
+  });
+
+  // KNOWN GAP: blockquote children are empty in the current implementation —
+  // inline content inside a blockquote is promoted to a root-level sibling
+  // paragraph rather than nested inside the blockquote node. Skipped until
+  // blockquote nesting is implemented.
+  it.skip('math inside blockquote', () => {
+    const p = createPartialMarkdownParser();
+    p.push('> Solve $x^2 = 4$.\n');
+    p.finish();
+    const bq = p.root!.children[0] as any;
+    const para = bq.children[0];
+    const math = para.children.find((n: any) => n.type === 'math-inline');
+    expect(math).toBeDefined();
+  });
+});

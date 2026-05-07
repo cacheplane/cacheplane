@@ -56,3 +56,14 @@ describe('math across chunk boundaries', () => {
     expect(root.children[0]).toMatchObject({ type: 'math-display', status: 'complete' });
   });
 });
+
+// T7
+it('closer adjacency fails: $x ‖ $ (whitespace before close) → plain text', () => {
+  const p = createPartialMarkdownParser();
+  p.push('a $x');
+  p.push(' $ b\n');
+  p.finish();
+  const para = p.root!.children[0] as any;
+  const math = para.children.find((n: any) => n.type === 'math-inline');
+  expect(math).toBeUndefined();
+});
