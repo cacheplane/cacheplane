@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createPartialMarkdownParser } from '../parser';
 import {
   detectHtmlBlockEnd,
   detectHtmlBlockStart,
@@ -81,5 +82,43 @@ describe('Kind-6 tag list', () => {
     expect(HTML_BLOCK_KIND_6_TAGS).toContain('div');
     expect(HTML_BLOCK_KIND_6_TAGS).toContain('table');
     expect(HTML_BLOCK_KIND_6_TAGS).toContain('ul');
+  });
+});
+
+// T11
+describe('Inline HTML in non-paragraph contexts', () => {
+  it('inline HTML inside link text', () => {
+    const p = createPartialMarkdownParser();
+    p.push('See [<span>this</span>](https://x.test) link.\n');
+    p.finish();
+    const para = p.root!.children[0] as any;
+    const link = para.children.find((n: any) => n.type === 'link');
+    expect(link).toBeDefined();
+    const html = link.children.filter((n: any) => n.type === 'html-inline');
+    expect(html.length).toBe(2);
+    expect(html[0].raw).toBe('<span>');
+  });
+
+  it('inline HTML inside table cell', () => {
+    const p = createPartialMarkdownParser();
+    p.push('| h | h |\n| - | - |\n| <kbd>Ctrl</kbd> | text |\n');
+    p.finish();
+    const table = p.root!.children[0] as any;
+    const bodyRow = table.children[1];
+    const cell = bodyRow.children[0];
+    const html = cell.children.filter((n: any) => n.type === 'html-inline');
+    expect(html.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('HTML NOT parsed inside inline code span', () => {
+    const p = createPartialMarkdownParser();
+    p.push('Use `<span>foo</span>` here.\n');
+    p.finish();
+    const para = p.root!.children[0] as any;
+    const html = para.children.find((n: any) => n.type === 'html-inline');
+    expect(html).toBeUndefined();
+    const code = para.children.find((n: any) => n.type === 'inline-code');
+    expect(code).toBeDefined();
+    expect(code.text).toBe('<span>foo</span>');
   });
 });

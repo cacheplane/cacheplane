@@ -144,3 +144,32 @@ describe('HTML inline pending buffer (cross-push)', () => {
     expect(text).toContain('<');
   });
 });
+
+// T4
+it('captures <img onerror=...> XSS payload verbatim', () => {
+  const p = createPartialMarkdownParser();
+  p.push('<img src=x onerror=alert(1)>\n\n');
+  p.finish();
+  const blocks = p.root!.children as any[];
+  const html = blocks.find((b) => b.type === 'html-block');
+  expect(html).toBeDefined();
+  expect(html!.raw).toContain('onerror=alert(1)');
+  // <img> may be kind 6 or kind 7 depending on whether it's in the
+  // CommonMark kind-6 tag list. Whichever it is, the raw content must
+  // be captured verbatim so a downstream sanitizer can strip it.
+});
+
+// T10
+it('kind-2 comment split across chunks: <!-- com ‖ ment -->', () => {
+  const p = createPartialMarkdownParser();
+  p.push('<!-- com');
+  p.push('ment -->\n');
+  p.finish();
+  const block = p.root!.children[0] as any;
+  expect(block.type).toBe('html-block');
+  // Verify the kind discriminator. The implementation uses `htmlKind`.
+  // 2 is the comment kind.
+  const kindField = 'htmlKind' in block ? 'htmlKind' : 'kind';
+  expect(block[kindField]).toBe(2);
+  expect(block.raw).toContain('comment');
+});
