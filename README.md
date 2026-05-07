@@ -219,6 +219,8 @@ See [`RELEASING.md`](RELEASING.md) for the release process.
   - [`packages/partial-json/CHANGELOG.md`](packages/partial-json/CHANGELOG.md)
   - [`packages/partial-markdown/CHANGELOG.md`](packages/partial-markdown/CHANGELOG.md)
 
+Monorepo-level changes (CI, tooling, workspace structure) are tracked in the root [CHANGELOG.md](CHANGELOG.md). Per-package release notes live in each package's own `CHANGELOG.md`.
+
 ## License
 
 MIT
