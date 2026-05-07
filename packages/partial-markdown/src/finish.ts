@@ -81,5 +81,27 @@ export function finishInternal(state: InternalState): InternalState {
     }
   }
 
+  const linkRefIdsSeen = new Set(s.linkRefIds.keys());
+  const linkDefIdsSeen = new Set(s.linkDefs.keys());
+
+  for (const [refId, refNodeIds] of s.linkRefIds) {
+    if (!linkDefIdsSeen.has(refId) && refNodeIds.length > 0) {
+      s = pushWarning(s, {
+        code: 'unresolved_link_ref',
+        index: s.index,
+        detail: `no definition for [${refId}]`,
+      });
+    }
+  }
+  for (const refId of linkDefIdsSeen) {
+    if (!linkRefIdsSeen.has(refId)) {
+      s = pushWarning(s, {
+        code: 'unused_link_def',
+        index: s.index,
+        detail: `unused link definition [${refId}]`,
+      });
+    }
+  }
+
   return { ...s, complete: true, mode: 'done', stack: [] };
 }

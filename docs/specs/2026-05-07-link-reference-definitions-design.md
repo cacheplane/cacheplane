@@ -36,7 +36,9 @@ this spec mirrors that architecture closely.
 
 - Recognize all three reference link forms (full, collapsed, shortcut) in any
   inline context (paragraph, heading, blockquote, list item, table cell).
-- Recognize multi-line link reference definitions per CommonMark §4.7.
+- Recognize single-line link reference definitions per CommonMark §4.7.
+  Multi-line titles are deferred because real LLM output overwhelmingly emits
+  the compact one-line form.
 - Forward resolution: a reference that arrives before its definition is exposed
   in `streaming` status with `resolved: false`; mutates in place to
   `resolved: true` with `url` / `title` when the definition arrives.
@@ -157,16 +159,17 @@ Where:
 - `<label>`: 1–999 characters, may not contain unescaped `]`.
 - `<destination>`: either `<url>` (angle-bracketed, may contain spaces) or a
   bare URL (no spaces, no control chars).
-- `<title>`: `"..."`, `'...'`, or `(...)`. **May span multiple lines** — title
-  termination is delayed across newlines until the matching close delimiter
-  arrives.
+- `<title>`: `"..."`, `'...'`, or `(...)` on the same line as the destination.
+  CommonMark allows multi-line titles; this implementation deliberately defers
+  that lower-frequency case.
 
 A definition can only appear at the start of a line and must NOT be inside an
 open paragraph (CommonMark requires it to be a standalone block-level
 construct). A definition that begins inside an open paragraph closes that
 paragraph first.
 
-New `ParseMode`: `'link-def-title'` for the multi-line title-continuation case.
+Reserved `ParseMode`: `'link-def-title'` for a future multi-line
+title-continuation case.
 
 ### Detection — references
 
@@ -281,7 +284,7 @@ with the existing
    `src/__tests__/chunk-boundary-link-refs.test.ts` covering:
    - All three reference forms.
    - Forward resolution across chunk boundaries.
-   - Multi-line definitions with multi-line titles.
+   - Single-line definitions with optional titles.
    - Label normalization edge cases.
    - All three warning codes.
    - Identity preservation across resolution.
@@ -325,6 +328,8 @@ When this lands, update:
 - **Strict CommonMark Unicode case folding** vs. JS `toLowerCase()` — defer to
   the LLM-output character set; revisit if a real consumer needs CJK label
   matching.
+- **Multi-line definition titles** — deferred until a real provider sample or
+  consumer integration requires the extra streaming state.
 
 ## References
 

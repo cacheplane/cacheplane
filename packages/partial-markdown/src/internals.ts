@@ -33,6 +33,23 @@ export const CITATION_REF_RE = /^\[\^([^\]\s]+)\]/;
 /** Block-level citation definition: `[^id]: body`. Capture[1] = id, capture[2] = body. */
 export const CITATION_DEF_RE = /^\[\^([^\]\s]+)\]:\s+(.*)$/;
 
+/**
+ * Block-level link reference definition.
+ * Capture[1] = label; Capture[2] = angle-bracketed URL; Capture[3] = bare URL.
+ * Optional title is Capture[4] / [5] / [6] for double, single, or paren quotes.
+ */
+export const LINK_DEF_RE =
+  /^\s{0,3}\[((?:\\.|[^\]\\])+?)\]:\s+(?:<([^>]*)>|(\S+))(?:\s+"([^"]*)"|\s+'([^']*)'|\s+\(([^)]*)\))?\s*$/;
+
+/** Inline full reference: `[text][label]`. Capture[1] = text, capture[2] = label. */
+export const LINK_REF_FULL_RE = /^\[((?:\\.|[^\]\\])+)\]\[((?:\\.|[^\]\\])+)\]/;
+
+/** Inline collapsed reference: `[text][]`. Capture[1] = text. */
+export const LINK_REF_COLLAPSED_RE = /^\[((?:\\.|[^\]\\])+)\]\[\]/;
+
+/** Inline shortcut reference: `[label]` not followed by `[` or `(`. Capture[1] = label. */
+export const LINK_REF_SHORTCUT_RE = /^\[((?:\\.|[^\]\\])+)\](?![\[(])/;
+
 /** Candidate table row: starts with optional whitespace, then `|`, contains `|`, ends with optional whitespace. */
 export const TABLE_ROW_RE = /^\s*\|.*\|\s*$/;
 
@@ -69,6 +86,10 @@ export function parseAlignmentRow(line: string): ReadonlyArray<Alignment> | null
     else alignments.push(null);
   }
   return alignments;
+}
+
+export function normalizeLinkLabel(raw: string): string {
+  return raw.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 // ── State helpers ─────────────────────────────────────────────────────────

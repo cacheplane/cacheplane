@@ -9,6 +9,7 @@ import type {
   ListAstNode,
   ListItemAstNode,
   CitationReferenceAstNode,
+  LinkReferenceAstNode,
   TableAstNode,
   TableRowAstNode,
   TableCellAstNode,
@@ -25,12 +26,14 @@ import {
   FENCE_OPEN_RE,
   BLOCKQUOTE_PREFIX_RE,
   CITATION_DEF_RE,
+  LINK_DEF_RE,
   TABLE_ROW_RE,
   TABLE_ALIGNMENT_RE,
   parseAlignmentRow,
   getOrAssignCitationIndex,
   TASK_MARKER_RE,
   measureLine,
+  normalizeLinkLabel,
 } from '../internals';
 import type { LineMeasurement } from '../internals';
 import { parseInline } from './inline';
@@ -111,6 +114,17 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
     s = closeOpenParagraph(s);
     s = closeOpenList(s);
     return liftCitationDef(s, citeDef[1]!, citeDef[2] ?? '');
+  }
+
+  // Link reference definition: lifts to linkDefs sidecar (no block-tree node).
+  const linkDef = LINK_DEF_RE.exec(line);
+  if (linkDef) {
+    s = closeOpenParagraph(s);
+    s = closeOpenList(s);
+    const label = linkDef[1]!;
+    const url = linkDef[2] ?? linkDef[3] ?? '';
+    const title = linkDef[4] ?? linkDef[5] ?? linkDef[6] ?? '';
+    return liftLinkDef(s, label, url, title);
   }
 
   // Mid-table body row: append to active table.
@@ -699,4 +713,48 @@ function liftCitationDef(state: InternalState, refId: string, body: string): Int
   }
 
   return s2;
+}
+
+function liftLinkDef(
+  state: InternalState,
+  rawLabel: string,
+  url: string,
+  title: string,
+): InternalState {
+  const id = normalizeLinkLabel(rawLabel);
+  const existing = state.linkDefs.get(id);
+
+  if (existing) {
+    return pushWarning(state, {
+      code: 'duplicate_link_def',
+      index: state.index,
+      detail: `duplicate link definition for [${rawLabel}]`,
+    });
+  }
+
+  const newDefs = new Map(state.linkDefs);
+  newDefs.set(id, { id, label: rawLabel, url, title, status: 'complete' });
+  let s: InternalState = { ...state, linkDefs: newDefs };
+
+  // Flip existing unresolved refs for this label in place.
+  const refsForId = s.linkRefIds.get(id) ?? [];
+  if (refsForId.length > 0) {
+    const nodes = s.nodes.slice();
+    for (const refNodeId of refsForId) {
+      const n = nodes[refNodeId];
+      if (n && n.kind === 'link-reference') {
+        nodes[refNodeId] = {
+          ...n,
+          resolved: true,
+          url,
+          title,
+          status: 'complete',
+        } as LinkReferenceAstNode;
+      }
+    }
+    // Keep an empty touched entry so finish() can distinguish used defs from unused defs.
+    s = { ...s, nodes, linkRefIds: new Map(s.linkRefIds).set(id, []) };
+  }
+
+  return s;
 }

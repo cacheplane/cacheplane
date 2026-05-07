@@ -20,6 +20,8 @@ export function createInternal(): InternalState {
     citationIndex: new Map(),
     citationRefIds: new Map(),
     citationDefs: new Map(),
+    linkRefIds: new Map(),
+    linkDefs: new Map(),
     nextCitationIndex: 1,
     tablePending: null,
     listStack: [],

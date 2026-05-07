@@ -9,6 +9,7 @@ import type {
   StreamStatus,
   MarkdownNodeType,
   CitationDefinition,
+  LinkDefinition,
 } from './types';
 
 /**
@@ -32,6 +33,19 @@ export function resolve(state: StreamState): MarkdownNode | null {
         id: def.id,
         index: def.index,
         children,
+        status: def.status,
+      });
+    }
+  }
+
+  const linkDefs = (state as InternalState).linkDefs;
+  if (linkDefs && linkDefs.size > 0) {
+    for (const [refId, def] of linkDefs) {
+      root.linkDefinitions.set(refId, {
+        id: def.id,
+        label: def.label,
+        url: def.url,
+        title: def.title,
         status: def.status,
       });
     }
@@ -73,6 +87,7 @@ function buildNode(
       };
       if (ast.kind === 'document') {
         partial.citations = new Map<string, CitationDefinition>();
+        partial.linkDefinitions = new Map<string, LinkDefinition>();
       }
       if (ast.kind === 'heading') partial.level = ast.level;
       if (ast.kind === 'list') {
@@ -101,6 +116,26 @@ function buildNode(
       cache.set(id, partial);
       const childAstIds = (ast as any).children as number[];
       partial.children = childAstIds.map((cid, i) => buildNode(nodes, cid, partial, i, cache));
+      node = partial as MarkdownNode;
+      break;
+    }
+    case 'link-reference': {
+      const partial: any = {
+        id,
+        type: 'link-reference',
+        status,
+        parent,
+        index,
+        refId: ast.refId,
+        label: ast.label,
+        form: ast.form,
+        resolved: ast.resolved,
+        url: ast.url,
+        title: ast.title,
+        children: [],
+      };
+      cache.set(id, partial);
+      partial.children = ast.children.map((cid, i) => buildNode(nodes, cid, partial, i, cache));
       node = partial as MarkdownNode;
       break;
     }

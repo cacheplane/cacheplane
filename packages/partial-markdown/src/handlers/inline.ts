@@ -11,8 +11,19 @@ import type {
   AutolinkAstNode,
   ImageAstNode,
   CitationReferenceAstNode,
+  LinkReferenceAstNode,
 } from '../types';
-import { allocId, appendNode, appendChild, CITATION_REF_RE, getOrAssignCitationIndex } from '../internals';
+import {
+  allocId,
+  appendNode,
+  appendChild,
+  CITATION_REF_RE,
+  getOrAssignCitationIndex,
+  LINK_REF_COLLAPSED_RE,
+  LINK_REF_FULL_RE,
+  LINK_REF_SHORTCUT_RE,
+  normalizeLinkLabel,
+} from '../internals';
 
 /**
  * Parse a single line of inline content into AST nodes attached as children
@@ -105,6 +116,14 @@ export function parseInline(state: InternalState, parentId: number, line: string
         const built = makeLink(inner.state, parentId, result.url, result.title, inner.childIds);
         s = appendInlineNode(built.state, parentId, built);
         cursor.i = result.endIndex;
+        continue;
+      }
+
+      const linkRef = matchLinkReference(line.slice(cursor.i));
+      if (linkRef) {
+        const built = makeLinkReference(s, parentId, linkRef.text, linkRef.label, linkRef.form);
+        s = appendInlineNode(built.state, parentId, built);
+        cursor.i += linkRef.length;
         continue;
       }
     }
@@ -292,6 +311,50 @@ function makeLink(
   return { state: s, node };
 }
 
+function makeLinkReference(
+  state: InternalState,
+  parentId: number,
+  text: string,
+  label: string,
+  form: 'full' | 'collapsed' | 'shortcut',
+): NodeBuild {
+  const refId = normalizeLinkLabel(label);
+  const existingDef = state.linkDefs.get(refId);
+
+  const [s1, refNodeId] = allocId(state);
+  const [s2, textNodeId] = allocId(s1);
+  const node: LinkReferenceAstNode = {
+    id: refNodeId,
+    kind: 'link-reference',
+    parentId,
+    status: existingDef ? 'complete' : 'streaming',
+    refId,
+    label,
+    form,
+    children: [textNodeId],
+    resolved: existingDef !== undefined,
+    url: existingDef?.url ?? '',
+    title: existingDef?.title ?? '',
+  };
+  const textNode: TextAstNode = {
+    id: textNodeId,
+    kind: 'text',
+    parentId: refNodeId,
+    status: 'complete',
+    text,
+  };
+  let s = appendNode(s2, node);
+  s = appendNode(s, textNode);
+
+  const refsForId = s.linkRefIds.get(refId) ?? [];
+  s = {
+    ...s,
+    linkRefIds: new Map(s.linkRefIds).set(refId, existingDef ? refsForId : [...refsForId, refNodeId]),
+  };
+
+  return { state: s, node };
+}
+
 function makePairedNode(
   state: InternalState, parentId: number, ch: string, runLength: number, childIds: number[],
 ): NodeBuild {
@@ -347,4 +410,25 @@ function parsedInner(state: InternalState, content: string): InlineParse {
   const phantom = s.nodes[phantomId];
   const childIds = (phantom && 'children' in phantom) ? phantom.children : [];
   return { state: s, childIds };
+}
+
+function matchLinkReference(remainder: string): {
+  text: string;
+  label: string;
+  form: 'full' | 'collapsed' | 'shortcut';
+  length: number;
+} | null {
+  const full = LINK_REF_FULL_RE.exec(remainder);
+  if (full) {
+    return { text: full[1]!, label: full[2]!, form: 'full', length: full[0].length };
+  }
+  const collapsed = LINK_REF_COLLAPSED_RE.exec(remainder);
+  if (collapsed) {
+    return { text: collapsed[1]!, label: collapsed[1]!, form: 'collapsed', length: collapsed[0].length };
+  }
+  const shortcut = LINK_REF_SHORTCUT_RE.exec(remainder);
+  if (shortcut) {
+    return { text: shortcut[1]!, label: shortcut[1]!, form: 'shortcut', length: shortcut[0].length };
+  }
+  return null;
 }
