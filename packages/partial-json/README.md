@@ -1,28 +1,11 @@
 # @cacheplane/partial-json
 
-Streaming JSON parser for incomplete input. Built for parsing the output of LLMs token by token, but works on any byte stream.
+Streaming JSON parser for incomplete input.
 
-```ts
-import { createPartialJsonParser } from '@cacheplane/partial-json';
-
-const parser = createPartialJsonParser();
-parser.push('{"items":[{"name":"alpha","done":');   // mid-token cutoff
-parser.push('true},{"name":"beta');                  // mid-string cutoff
-
-parser.getByPath('/items/0/name');
-// { type: 'string', value: 'alpha', status: 'complete', ... }
-
-parser.getByPath('/items/1/name');
-// { type: 'string', value: 'beta', status: 'streaming', ... }
-```
-
-The parser never throws on truncation. Every node carries a `status: 'pending' | 'streaming' | 'complete'` — you can render incomplete data as it arrives and let nodes resolve in place.
-
-## Why
-
-Streaming LLMs emit JSON one fragment at a time, often mid-string or mid-number. `JSON.parse` requires the whole document. Workarounds (try/catch loops, regex tail-trimming, "best-effort" parsers that lose structure) all leak complexity into your UI layer.
-
-This parser does the right thing: gives you a typed AST that grows in place, with stable node identity across pushes so React/Angular/Solid can use referential equality for memoization.
+Use it when an AI model, network stream, worker, or tool call emits JSON a
+chunk at a time. `JSON.parse()` needs a complete document. This parser gives
+you a typed tree while the document is still arriving, and keeps node object
+identity stable as later chunks update the tree.
 
 ## Install
 
@@ -30,31 +13,130 @@ This parser does the right thing: gives you a typed AST that grows in place, wit
 npm install @cacheplane/partial-json
 ```
 
-ESM and CJS bundled, zero runtime dependencies, side-effect free.
+Runtime and packaging:
 
-## Two APIs over one core
+- Node `>=20`
+- TypeScript declarations included
+- ESM and CJS bundled
+- Zero runtime dependencies
+- Marked side-effect free
 
-Mix freely — both produce the same node graph.
-
-### Push-style (recommended for UI streaming)
+## 30-Second Example
 
 ```ts
-import { createPartialJsonParser, materialize } from '@cacheplane/partial-json';
+import { createPartialJsonParser } from '@cacheplane/partial-json';
 
 const parser = createPartialJsonParser();
-parser.push(chunk);
 
-// Walk the tree:
-parser.root;                            // root JsonNode (or null before any input)
-parser.getByPath('/items/0/name');      // JSON Pointer lookup, partial-aware
+parser.push('{"items":[{"name":"alpha","done":');
+parser.push('true},{"name":"beta');
 
-// Snapshot a plain JS value with structural sharing:
-const snapshot = materialize(parser.root);
+const first = parser.getByPath('/items/0/name');
+const second = parser.getByPath('/items/1/name');
+
+console.log(first);
+// { type: 'string', value: 'alpha', status: 'complete', ... }
+
+console.log(second);
+// { type: 'string', value: 'beta', status: 'streaming', ... }
 ```
 
-`materialize()` reuses subtrees that haven't changed since the previous call, so you can snapshot on every render frame without busting downstream memoization.
+The parser does not throw just because the input ends mid-token. Every public
+node carries `status: 'pending' | 'streaming' | 'complete'`, so a UI can render
+what exists now and let nodes resolve in place.
 
-### Pull-style (immutable state)
+## When To Use It
+
+Use `@cacheplane/partial-json` when you need to:
+
+- Render structured LLM output before the model finishes.
+- Watch one field in a streaming tool-call argument object.
+- Preserve React, Angular, Solid, or custom renderer memoization across chunks.
+- Convert a live parser tree into plain JS snapshots without replacing
+  unchanged subtrees.
+- Parse strict JSON incrementally without regex trimming or repair loops.
+
+It is not a JSON repair library. Invalid JSON still becomes an error; truncated
+JSON is treated as ordinary in-progress input.
+
+## Mental Model
+
+The parser builds a node tree. Nodes are mutated in place as more input arrives.
+Each node has:
+
+- `id`: stable numeric identity for the lifetime of the parser.
+- `type`: JSON node type.
+- `status`: `pending`, `streaming`, or `complete`.
+- `parent`: parent node or `null`.
+- `key`: object property key, array index, or `null` for the root.
+
+Container nodes expose children:
+
+- Object nodes use `children: Map<string, JsonNode>`.
+- Array nodes use `children: JsonNode[]`.
+
+Scalar nodes expose values:
+
+- String nodes expose partial `value` while streaming.
+- Number nodes expose `raw` while streaming and parsed `value` after completion.
+- Boolean and null nodes remain `pending` until the literal resolves.
+
+## Push-Style API
+
+Use the push-style API for streaming UIs and long-lived node references.
+
+```ts
+import {
+  createPartialJsonParser,
+  materialize,
+} from '@cacheplane/partial-json';
+
+const parser = createPartialJsonParser();
+
+for await (const chunk of llmStream) {
+  const events = parser.push(chunk);
+
+  for (const event of events) {
+    if (event.type === 'value-updated') {
+      // event.node is the same object reference across future pushes.
+    }
+  }
+
+  if (parser.root) {
+    const snapshot = materialize(parser.root);
+    render(snapshot);
+  }
+}
+
+parser.finish();
+```
+
+`push(chunk)` and `finish()` return `ParseEvent[]`:
+
+```ts
+interface ParseEvent {
+  type: 'node-created' | 'value-updated' | 'node-completed';
+  node: JsonNode;
+  delta?: string;
+}
+```
+
+### JSON Pointer Lookup
+
+`getByPath()` accepts JSON Pointer paths:
+
+```ts
+parser.getByPath('');                  // root
+parser.getByPath('/items/0/name');     // array index + object key
+parser.getByPath('/a~1b/~0key');       // RFC 6901 escaping
+```
+
+Missing paths return `null`.
+
+## Pull-Style API
+
+Use the pull-style API when you want immutable parser state, such as reducers,
+undo/redo stacks, deterministic tests, or state-machine integrations.
 
 ```ts
 import { create, push, finish, resolve } from '@cacheplane/partial-json';
@@ -64,81 +146,200 @@ state = push(state, '{"a":1');
 state = push(state, ',"b":2}');
 state = finish(state);
 
-const value = resolve(state);   // { a: 1, b: 2 }
+const value = resolve(state);
+// { a: 1, b: 2 }
 ```
 
-Each call returns a new state object. Useful inside reducers and undo/redo stacks.
+Each call returns a new `StreamState`.
 
-## Node shape
+## Structural-Sharing Snapshots
+
+`materialize(node)` converts a parser node tree into a plain JavaScript value.
+It uses a `WeakMap` cache keyed by node identity, so unchanged subtrees return
+the same object reference across calls.
+
+```ts
+const before = materialize(parser.root!);
+
+parser.push(',"next":true');
+
+const after = materialize(parser.root!);
+```
+
+This is useful when rendering every animation frame or every stream chunk.
+Consumers that compare references only re-render subtrees that actually changed.
+
+## Guarantees
+
+`@cacheplane/partial-json` guarantees:
+
+- Truncated valid-prefix JSON is parseable as in-progress input.
+- Public push-style node object identity is stable across pushes.
+- Node status uses the same `pending | streaming | complete` lifecycle as
+  `@cacheplane/partial-markdown`.
+- `materialize()` preserves references for unchanged subtrees.
+- Duplicate object keys follow normal JavaScript materialization semantics:
+  later values win.
+- `finish()` closes valid trailing constructs that can complete at end of input,
+  such as a number waiting for a terminator.
+- Syntax errors are recorded in parser state rather than hidden by best-effort
+  repair.
+
+## Limits
+
+This package does not:
+
+- Repair invalid JSON.
+- Accept JSON5 features such as comments, single-quoted strings, trailing
+  commas, unquoted object keys, `.5`, or `+1`.
+- Preserve duplicate object-key history in materialized output.
+- Validate application-level schemas.
+- Stream multiple top-level JSON documents through one parser instance.
+
+Create a new parser for each top-level document.
+
+## Node Shape
 
 ```ts
 interface JsonNodeBase {
-  readonly id: number;                                // stable identity, never changes
+  readonly id: number;
   readonly type: 'object' | 'array' | 'string' | 'number' | 'boolean' | 'null';
   status: 'pending' | 'streaming' | 'complete';
   parent: JsonNode | null;
-  key: string | number | null;                        // key in parent object, or array index
+  key: string | number | null;
 }
 ```
 
-- `JsonObjectNode` adds `children: Map<string, JsonNode>` (insertion-ordered).
-- `JsonArrayNode` adds `children: JsonNode[]`.
-- Scalars (`string`, `number`, `boolean`, `null`) carry `value`. Strings expose partial content while `status === 'streaming'`.
-
-Type guards are exported for narrowing:
+Object nodes:
 
 ```ts
-import { isObjectNode, isStringNode, isComplete } from '@cacheplane/partial-json';
-
-const node = parser.getByPath('/title');
-if (node && isStringNode(node) && isComplete(node)) {
-  // node.value is the fully-parsed string
+interface JsonObjectNode extends JsonNodeBase {
+  readonly type: 'object';
+  children: Map<string, JsonNode>;
+  pendingKey: string | null;
 }
 ```
 
-## Common patterns
+Array nodes:
 
-### Render a streaming response
+```ts
+interface JsonArrayNode extends JsonNodeBase {
+  readonly type: 'array';
+  children: JsonNode[];
+}
+```
+
+Scalar nodes:
+
+```ts
+interface JsonStringNode extends JsonNodeBase {
+  readonly type: 'string';
+  value: string;
+}
+
+interface JsonNumberNode extends JsonNodeBase {
+  readonly type: 'number';
+  raw: string;
+  value: number | null;
+}
+
+interface JsonBooleanNode extends JsonNodeBase {
+  readonly type: 'boolean';
+  value: boolean;
+}
+
+interface JsonNullNode extends JsonNodeBase {
+  readonly type: 'null';
+}
+```
+
+## Type Guards
+
+```ts
+import {
+  isObjectNode,
+  isArrayNode,
+  isStringNode,
+  isNumberNode,
+  isBoolNode,
+  isNullNode,
+  isComplete,
+} from '@cacheplane/partial-json';
+
+const node = parser.getByPath('/title');
+
+if (node && isStringNode(node) && isComplete(node)) {
+  console.log(node.value);
+}
+```
+
+## Common Patterns
+
+### Render A Streaming Response
 
 ```ts
 const parser = createPartialJsonParser();
 
 for await (const chunk of llmStream) {
   parser.push(chunk);
-  render(parser.root);   // node identity stable across calls — safe for keyed renders
+  render(parser.root);
 }
 
 parser.finish();
 ```
 
-### Watch a specific field
+### Watch A Specific Field
 
 ```ts
 parser.push(chunk);
+
 const status = parser.getByPath('/result/status');
-if (status?.status === 'complete') {
-  console.log('result.status finalized:', status.value);
+
+if (status?.status === 'complete' && status.type === 'string') {
+  console.log('final status:', status.value);
 }
 ```
 
-### Detect end of document
+### Read Partial String Content
 
 ```ts
+const title = parser.getByPath('/title');
+
+if (title?.type === 'string') {
+  renderTitle(title.value, { final: title.status === 'complete' });
+}
+```
+
+### Detect End Of Document
+
+```ts
+parser.finish();
+
 if (parser.root?.status === 'complete') {
-  // safe to materialize and discard
+  const value = materialize(parser.root);
 }
 ```
 
-### Snapshot for diffing
+## Troubleshooting
 
-```ts
-const before = materialize(parser.root);
-parser.push(nextChunk);
-const after = materialize(parser.root);
-// Subtrees that didn't change are reference-equal between `before` and `after`.
-```
+**`parser.root` is `null`.**
+No root node has been created yet. Push a non-whitespace chunk first.
 
-## API reference
+**A number has `value: null`.**
+The number is still streaming. Use `raw` for display, or wait until
+`status === 'complete'`.
+
+**A boolean or null node is `pending`.**
+The literal has not resolved yet. For example, `tr` may become `true`.
+
+**`resolve(state)` returns `undefined`.**
+The pull-style state does not currently contain a complete resolvable value.
+Call `finish()` when the stream ends and check `state.error`.
+
+**Invalid JSON produces an error.**
+This is expected. The parser tolerates truncation, not malformed syntax.
+
+## API Reference
 
 ```ts
 // Push-style
@@ -148,10 +349,10 @@ interface PartialJsonParser {
   push(chunk: string): ParseEvent[];
   finish(): ParseEvent[];
   readonly root: JsonNode | null;
-  getByPath(path: string): JsonNode | null;   // JSON Pointer (RFC 6901)
+  getByPath(path: string): JsonNode | null;
 }
 
-materialize(node: JsonNode): JsonValue;       // structural-sharing snapshot
+materialize(node: JsonNode): unknown;
 
 // Pull-style
 create(): StreamState;
@@ -160,14 +361,27 @@ finish(state: StreamState): StreamState;
 resolve(state: StreamState): JsonValue | undefined;
 
 // Type guards
-isObjectNode, isArrayNode, isStringNode, isNumberNode,
-isBoolNode, isNullNode, isComplete
-
-// Types
-JsonNode, JsonValue, StreamStatus, StreamState, StreamError, ParseEvent
-JsonObjectNode, JsonArrayNode, JsonStringNode, JsonNumberNode,
-JsonBooleanNode, JsonNullNode, JsonNodeType
+isObjectNode(node): node is JsonObjectNode;
+isArrayNode(node): node is JsonArrayNode;
+isStringNode(node): node is JsonStringNode;
+isNumberNode(node): node is JsonNumberNode;
+isBoolNode(node): node is JsonBooleanNode;
+isNullNode(node): node is JsonNullNode;
+isComplete(node): boolean;
 ```
+
+Exported types:
+
+```ts
+JsonNode, JsonValue, StreamStatus, StreamState, StreamError, ParseEvent,
+JsonObjectNode, JsonArrayNode, JsonStringNode, JsonNumberNode,
+JsonBooleanNode, JsonNullNode, JsonNodeType,
+AstNode, ObjectNode, ArrayNode, StringNode, NumberNode, BoolNode, NullNode
+```
+
+## Changelog
+
+See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## License
 
