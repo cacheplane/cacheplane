@@ -6,9 +6,6 @@ on:
       - 'partial-json-v*'
       - 'partial-markdown-v*'
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -16,14 +13,14 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
       # Node 24 ships npm 11.x natively, which implements the OIDC
       # trusted-publishing flow. Earlier Node versions ship npm 10.x and
       # require a separate `npm install -g npm@latest` step.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: 'pnpm'
