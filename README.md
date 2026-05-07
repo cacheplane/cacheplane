@@ -31,6 +31,8 @@ pnpm build           # publishable artifacts in packages/*/dist
 
 See [RELEASING.md](RELEASING.md). Tag-routed publish: `partial-json-v0.2.2` triggers an OIDC trusted-publishing release of `@cacheplane/partial-json@0.2.2`, same for partial-markdown.
 
+Monorepo-level changes (CI, tooling, workspace structure) are tracked in the root [CHANGELOG.md](CHANGELOG.md). Per-package release notes live in each package's own `CHANGELOG.md`.
+
 ## License
 
 MIT
