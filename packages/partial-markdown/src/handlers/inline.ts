@@ -39,8 +39,19 @@ import { matchInlineHtml } from './html';
  * backticks. Links and images by `[…](…)` patterns. Autolinks by
  * `<scheme://…>`. Unmatched delimiters become literal text.
  */
-export function parseInline(state: InternalState, parentId: number, line: string): InternalState {
+const HTML_INLINE_PENDING_CAP = 4096;
+
+export function parseInline(state: InternalState, parentId: number, rawLine: string): InternalState {
   let s = state;
+
+  // If a previous call left a pending partial HTML tag, prepend it to this
+  // line and clear the buffer before scanning.
+  let line = rawLine;
+  if (s.htmlInlinePending.length > 0) {
+    line = s.htmlInlinePending + rawLine;
+    s = { ...s, htmlInlinePending: '' };
+  }
+
   const cursor = { i: 0 };
 
   while (cursor.i < line.length) {
@@ -158,6 +169,15 @@ export function parseInline(state: InternalState, parentId: number, line: string
         s = appendInlineNode(s, parentId, makeHtmlInline(s, parentId, raw));
         cursor.i += result.length;
         continue;
+      }
+      if (result === 'pending') {
+        const held = line.slice(cursor.i);
+        if (held.length <= HTML_INLINE_PENDING_CAP) {
+          // Store the partial tag and stop scanning this line. The next line
+          // (or finish()) will prepend this content and continue.
+          return { ...s, htmlInlinePending: held };
+        }
+        // Overflow: fall through — let '<' be treated as plain text below.
       }
     }
 
