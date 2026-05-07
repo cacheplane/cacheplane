@@ -71,6 +71,8 @@ describe('types', () => {
       | 'table-cell'
       | 'citation-reference'
       | 'link-reference'
+      | 'math-inline'
+      | 'math-display'
     >();
   });
 
@@ -88,6 +90,8 @@ describe('types', () => {
       | 'table-row'
       | 'citation-def'
       | 'link-def-title'
+      | 'math-inline'
+      | 'math-display'
       | 'done'
       | 'error'
     >();

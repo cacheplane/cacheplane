@@ -7,6 +7,7 @@ import type {
   StrongAstNode,
   StrikethroughAstNode,
   InlineCodeAstNode,
+  MathInlineAstNode,
   LinkAstNode,
   AutolinkAstNode,
   ImageAstNode,
@@ -24,6 +25,7 @@ import {
   LINK_REF_SHORTCUT_RE,
   normalizeLinkLabel,
 } from '../internals';
+import { findMathCloser, inlineDelimiter, isMathOpenerAt, openerLength } from './math';
 
 /**
  * Parse a single line of inline content into AST nodes attached as children
@@ -50,6 +52,24 @@ export function parseInline(state: InternalState, parentId: number, line: string
         s = appendInlineNode(s, parentId, makeInlineCode(s, parentId, result.text));
         cursor.i = result.endIndex;
         continue;
+      }
+    }
+
+    // Inline math: $..$ and \(..\). Code spans above remain opaque.
+    if (ch === '$' || ch === '\\') {
+      const opener = isMathOpenerAt(line, cursor.i, s.options.math);
+      if (opener && (opener.kind === '$' || opener.kind === '\\(')) {
+        const bodyStart = cursor.i + openerLength(opener.kind);
+        const closer = findMathCloser(line, bodyStart, opener.kind);
+        if (closer >= 0) {
+          s = appendInlineNode(
+            s,
+            parentId,
+            makeMathInline(s, parentId, line.slice(bodyStart, closer), opener.kind),
+          );
+          cursor.i = closer + openerLength(opener.kind);
+          continue;
+        }
       }
     }
 
@@ -250,7 +270,11 @@ function matchTextRun(line: string, start: number): { text: string; endIndex: nu
   let text = '';
   while (i < line.length) {
     const c = line[i];
-    if (c === '*' || c === '_' || c === '~' || c === '`' || c === '[' || c === '<' || c === '!') break;
+    if (
+      c === '*' || c === '_' || c === '~' || c === '`' || c === '[' ||
+      c === '<' || c === '!' || c === '$' ||
+      (c === '\\' && (line[i + 1] === '(' || line[i + 1] === '['))
+    ) break;
     text += c;
     i++;
   }
@@ -277,6 +301,24 @@ function makeText(state: InternalState, parentId: number, text: string): NodeBui
 function makeInlineCode(state: InternalState, parentId: number, text: string): NodeBuild {
   const [s1, id] = allocId(state);
   const node: InlineCodeAstNode = { id, kind: 'inline-code', parentId, status: 'complete', text };
+  return { state: s1, node };
+}
+
+function makeMathInline(
+  state: InternalState,
+  parentId: number,
+  text: string,
+  kind: '$' | '\\(',
+): NodeBuild {
+  const [s1, id] = allocId(state);
+  const node: MathInlineAstNode = {
+    id,
+    kind: 'math-inline',
+    parentId,
+    status: 'complete',
+    text,
+    delimiter: inlineDelimiter(kind),
+  };
   return { state: s1, node };
 }
 

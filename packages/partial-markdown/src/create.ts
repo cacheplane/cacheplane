@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-import type { InternalState } from './types';
+import type { InternalState, PartialMarkdownParserOptions } from './types';
 
-export function createInternal(): InternalState {
+export function createInternal(options?: PartialMarkdownParserOptions): InternalState {
   return {
     nodes: [],
     rootId: null,
@@ -17,6 +17,14 @@ export function createInternal(): InternalState {
     lineBuffer: '',
     textBuffer: '',
     currentNodeId: null,
+    options: {
+      math: {
+        dollar: options?.math?.dollar ?? true,
+        bracket: options?.math?.bracket ?? true,
+      },
+    },
+    mathOpener: null,
+    mathNodeId: null,
     citationIndex: new Map(),
     citationRefIds: new Map(),
     citationDefs: new Map(),

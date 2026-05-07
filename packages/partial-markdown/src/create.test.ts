@@ -36,4 +36,14 @@ describe('createInternal', () => {
     const s = createInternal();
     expect(s.nextId).toBe(0);
   });
+
+  it('enables both math delimiter families by default', () => {
+    const s = createInternal();
+    expect(s.options.math).toEqual({ dollar: true, bracket: true });
+  });
+
+  it('accepts math delimiter family options', () => {
+    const s = createInternal({ math: { dollar: false, bracket: false } });
+    expect(s.options.math).toEqual({ dollar: false, bracket: false });
+  });
 });

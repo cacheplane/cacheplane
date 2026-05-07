@@ -26,6 +26,23 @@ export function finishInternal(state: InternalState): InternalState {
     s = closeOpenParagraph(s);
   }
 
+  if (s.mathNodeId !== null) {
+    const mathNodeId = s.mathNodeId;
+    s = pushWarning(s, {
+      code: 'unterminated_math',
+      index: s.index,
+      detail: 'unterminated math expression',
+    });
+    s = setStatus(s, mathNodeId, 'complete');
+    s = {
+      ...s,
+      mode: 'block',
+      mathOpener: null,
+      mathNodeId: null,
+      currentNodeId: null,
+    };
+  }
+
   // Walk the open-container stack from innermost to outermost. Any node that
   // requires an explicit closer (currently: fenced code blocks) gets a
   // warning before being closed.

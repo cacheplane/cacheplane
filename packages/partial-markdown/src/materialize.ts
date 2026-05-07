@@ -31,7 +31,10 @@ function computeVersion(node: MarkdownNode): string {
   switch (node.type) {
     case 'text':
     case 'inline-code':
+    case 'math-inline':
       return `${node.type}:${node.status}:${(node as any).text}`;
+    case 'math-display':
+      return `math-display:${node.status}:${(node as any).delimiter}:${(node as any).text}`;
     case 'code-block':
       return `code-block:${node.status}:${(node as any).language}:${(node as any).text}`;
     case 'autolink':

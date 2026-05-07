@@ -13,6 +13,8 @@ export type {
   AstNode,
   AstNodeKind,
   ParseMode,
+  PartialMarkdownParserOptions,
+  ResolvedParserOptions,
   StreamError,
   StreamState,
   MarkdownNode,
@@ -28,12 +30,14 @@ export type {
   MarkdownListNode,
   MarkdownListItemNode,
   MarkdownCodeBlockNode,
+  MarkdownMathDisplayNode,
   MarkdownThematicBreakNode,
   MarkdownTextNode,
   MarkdownEmphasisNode,
   MarkdownStrongNode,
   MarkdownStrikethroughNode,
   MarkdownInlineCodeNode,
+  MarkdownMathInlineNode,
   MarkdownLinkNode,
   MarkdownAutolinkNode,
   MarkdownImageNode,
@@ -57,10 +61,10 @@ export type {
 import { createInternal } from './create';
 import { pushInternal } from './push';
 import { finishInternal } from './finish';
-import type { InternalState, StreamState } from './types';
+import type { InternalState, PartialMarkdownParserOptions, StreamState } from './types';
 
-export function create(): StreamState {
-  return createInternal();
+export function create(options?: PartialMarkdownParserOptions): StreamState {
+  return createInternal(options);
 }
 export function push(state: StreamState, chunk: string): StreamState {
   return pushInternal(state as InternalState, chunk);
@@ -75,7 +79,8 @@ export {
   isDocumentNode, isParagraphNode, isHeadingNode, isBlockquoteNode,
   isListNode, isListItemNode, isCodeBlockNode, isThematicBreakNode,
   isTextNode, isEmphasisNode, isStrongNode, isStrikethroughNode,
-  isInlineCodeNode, isLinkNode, isAutolinkNode, isImageNode,
+  isInlineCodeNode, isMathInlineNode, isMathDisplayNode,
+  isLinkNode, isAutolinkNode, isImageNode,
   isSoftBreakNode, isHardBreakNode, isCompleteNode,
   isTableNode, isTableRowNode, isTableCellNode, isCitationReferenceNode,
   isLinkReferenceNode,

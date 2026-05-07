@@ -131,4 +131,31 @@ describe('Anthropic-shaped Markdown streams', () => {
     expect(ref.resolved).toBe(true);
     expect(ref.url).toBe('/docs');
   });
+
+  it('parses math in text deltas while ignoring non-text deltas', () => {
+    const parsers = feedAnthropicMarkdown([
+      {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'text_delta', text: 'Compute $' },
+      },
+      {
+        type: 'content_block_delta',
+        index: 1,
+        delta: { type: 'input_json_delta', partial_json: '{"ignored":true}' },
+      },
+      {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'text_delta', text: 'a+b$.\n' },
+      },
+    ]);
+
+    const parser = parsers.get(0)!;
+    parser.finish();
+    const paragraph = parser.root!.children[0] as any;
+    const math = paragraph.children.find((node: any) => node.type === 'math-inline');
+    expect(math).toMatchObject({ text: 'a+b', delimiter: '$' });
+    expect(parsers.has(1)).toBe(false);
+  });
 });
