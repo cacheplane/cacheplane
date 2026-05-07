@@ -109,4 +109,26 @@ describe('Anthropic-shaped Markdown streams', () => {
       expect(list.children[0]?.status).toBe('streaming');
     }
   });
+
+  it('parses reference-style links in text deltas', () => {
+    const parsers = feedAnthropicMarkdown([
+      {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'text_delta', text: 'See [docs] for details.\n' },
+      },
+      {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'text_delta', text: '[docs]: /docs\n' },
+      },
+    ]);
+
+    const parser = parsers.get(0)!;
+    parser.finish();
+    const paragraph = parser.root!.children[0] as any;
+    const ref = paragraph.children.find((n: any) => n.type === 'link-reference');
+    expect(ref.resolved).toBe(true);
+    expect(ref.url).toBe('/docs');
+  });
 });

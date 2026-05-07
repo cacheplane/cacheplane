@@ -39,6 +39,7 @@ export type ParseMode =
   | 'table'
   | 'table-row'
   | 'citation-def'
+  | 'link-def-title'
   | 'done'
   | 'error';
 
@@ -59,7 +60,10 @@ export interface MarkdownWarning {
     | 'unused_citation_def'
     | 'duplicate_citation_def'
     | 'table_overflow'
-    | 'malformed_table_alignment';
+    | 'malformed_table_alignment'
+    | 'unresolved_link_ref'
+    | 'unused_link_def'
+    | 'duplicate_link_def';
   index: number;
   detail?: string;
 }
@@ -86,7 +90,8 @@ export type AstNodeKind =
   | 'table'
   | 'table-row'
   | 'table-cell'
-  | 'citation-reference';
+  | 'citation-reference'
+  | 'link-reference';
 
 interface AstNodeBase {
   id: number;
@@ -223,6 +228,19 @@ export interface CitationReferenceAstNode extends AstNodeBase {
   resolved: boolean;
 }
 
+export interface LinkReferenceAstNode extends AstNodeBase {
+  kind: 'link-reference';
+  /** Normalized label: trimmed, whitespace-collapsed, lower-cased. */
+  refId: string;
+  /** Original label as authored. */
+  label: string;
+  form: 'full' | 'collapsed' | 'shortcut';
+  children: number[];
+  resolved: boolean;
+  url: string;
+  title: string;
+}
+
 export type AstNode =
   | DocumentAstNode
   | ParagraphAstNode
@@ -245,7 +263,8 @@ export type AstNode =
   | TableAstNode
   | TableRowAstNode
   | TableCellAstNode
-  | CitationReferenceAstNode;
+  | CitationReferenceAstNode
+  | LinkReferenceAstNode;
 
 export interface StreamState {
   nodes: AstNode[];
@@ -281,6 +300,10 @@ export interface InternalState extends StreamState {
     childAstIds: number[];
     status: StreamStatus;
   }>;
+  /** Map of normalized link label → AstNode ids of unresolved/touched references. */
+  linkRefIds: Map<string, number[]>;
+  /** Map of normalized link label → definition body. First-seen wins. */
+  linkDefs: Map<string, LinkDefinition>;
   /** Running counter for the next citation index to assign. */
   nextCitationIndex: number;
   /**
@@ -318,6 +341,7 @@ export interface MarkdownDocumentNode extends MarkdownNodeBase {
   readonly type: 'document';
   children: MarkdownBlockNode[];
   citations: Map<string, CitationDefinition>;
+  linkDefinitions: Map<string, LinkDefinition>;
 }
 
 export interface MarkdownParagraphNode extends MarkdownNodeBase {
@@ -425,6 +449,14 @@ export interface CitationDefinition {
   status: StreamStatus;
 }
 
+export interface LinkDefinition {
+  id: string;
+  label: string;
+  url: string;
+  title: string;
+  status: StreamStatus;
+}
+
 export interface MarkdownTableNode extends MarkdownNodeBase {
   readonly type: 'table';
   alignments: ReadonlyArray<Alignment>;
@@ -455,6 +487,17 @@ export interface MarkdownCitationReferenceNode extends MarkdownNodeBase {
   resolved: boolean;
 }
 
+export interface MarkdownLinkReferenceNode extends MarkdownNodeBase {
+  readonly type: 'link-reference';
+  refId: string;
+  label: string;
+  form: 'full' | 'collapsed' | 'shortcut';
+  children: MarkdownInlineNode[];
+  resolved: boolean;
+  url: string;
+  title: string;
+}
+
 export type MarkdownBlockNode =
   | MarkdownParagraphNode
   | MarkdownHeadingNode
@@ -475,7 +518,8 @@ export type MarkdownInlineNode =
   | MarkdownImageNode
   | MarkdownSoftBreakNode
   | MarkdownHardBreakNode
-  | MarkdownCitationReferenceNode;
+  | MarkdownCitationReferenceNode
+  | MarkdownLinkReferenceNode;
 
 export type MarkdownNode =
   | MarkdownDocumentNode

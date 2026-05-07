@@ -45,10 +45,12 @@ export type {
   MarkdownWarning,
   Alignment,
   CitationDefinition,
+  LinkDefinition,
   MarkdownTableNode,
   MarkdownTableRowNode,
   MarkdownTableCellNode,
   MarkdownCitationReferenceNode,
+  MarkdownLinkReferenceNode,
 } from './types';
 
 // ── Pull-style ─────────────────────────────────────────────────────────────
@@ -76,4 +78,5 @@ export {
   isInlineCodeNode, isLinkNode, isAutolinkNode, isImageNode,
   isSoftBreakNode, isHardBreakNode, isCompleteNode,
   isTableNode, isTableRowNode, isTableCellNode, isCitationReferenceNode,
+  isLinkReferenceNode,
 } from './guards';

@@ -188,6 +188,7 @@ Consumers that compare references only re-render subtrees that actually changed.
 - Thematic breaks
 - GFM tables
 - Pandoc-style citation definitions
+- Link reference definitions
 
 ### Inline
 
@@ -201,6 +202,7 @@ Consumers that compare references only re-render subtrees that actually changed.
 - Images
 - Soft and hard line breaks
 - Citation references
+- Link references: `[text][label]`, `[label][]`, and `[label]`
 
 ## AI-Friendly Markdown Behavior
 
@@ -251,6 +253,19 @@ lifted into `root.citations`. References use 1-based indices in first-touch
 order. If a definition arrives after a reference, the existing reference node
 flips `resolved` from `false` to `true` in place.
 
+### Link References
+
+```md
+Read [the guide][docs] or [docs].
+
+[docs]: https://example.com "Docs"
+```
+
+Full, collapsed, and shortcut reference links become `link-reference` inline
+nodes. Definitions are lifted into `root.linkDefinitions` and keyed by
+normalized label. If a definition arrives after a reference, the existing
+reference node mutates in place with `resolved: true`, `url`, and `title`.
+
 ## Guarantees
 
 `@cacheplane/partial-markdown` guarantees:
@@ -261,16 +276,20 @@ flips `resolved` from `false` to `true` in place.
   `@cacheplane/partial-json`.
 - `materialize()` preserves references for unchanged subtrees.
 - Citation references keep stable identity when their `resolved` flag changes.
+- Link references keep stable identity when their `resolved`, `url`, or `title`
+  fields change.
 - Task-list item nodes keep stable identity when checked state changes.
 - Table, row, and cell references stay stable when later rows arrive.
 - Citation definitions are stored in insertion order by first-touch citation
   index.
+- Link definitions are stored in normalized-label insertion order.
 
 ## Limits
 
 This package does not currently support:
 
-- Link reference definitions
+- Multi-line link definition titles
+- Link definitions inside list items
 - HTML inline nodes or HTML block nodes
 - Math
 - Custom Markdown extensions
@@ -295,6 +314,9 @@ Current warning codes:
 'duplicate_citation_def'
 'table_overflow'
 'malformed_table_alignment'
+'unresolved_link_ref'
+'unused_link_def'
+'duplicate_link_def'
 ```
 
 Warnings are intended for diagnostics, logging, and optional UI affordances.
@@ -319,6 +341,7 @@ interface MarkdownDocumentNode extends MarkdownNodeBase {
   readonly type: 'document';
   children: MarkdownBlockNode[];
   citations: Map<string, CitationDefinition>;
+  linkDefinitions: Map<string, LinkDefinition>;
 }
 
 interface MarkdownParagraphNode extends MarkdownNodeBase {
@@ -371,6 +394,18 @@ interface CitationDefinition {
 }
 ```
 
+Link definitions:
+
+```ts
+interface LinkDefinition {
+  id: string;
+  label: string;
+  url: string;
+  title: string;
+  status: 'pending' | 'streaming' | 'complete';
+}
+```
+
 ## Type Guards
 
 ```ts
@@ -397,6 +432,7 @@ import {
   isSoftBreakNode,
   isHardBreakNode,
   isCitationReferenceNode,
+  isLinkReferenceNode,
   isCompleteNode,
 } from '@cacheplane/partial-markdown';
 ```
@@ -475,6 +511,10 @@ The parser may still be holding the current line open. Push a newline or call
 The matching definition has not arrived. If the definition later streams in, the
 same reference node flips `resolved` to `true`.
 
+**A link reference is unresolved.**
+The matching definition has not arrived. If the definition later streams in, the
+same reference node flips `resolved` to `true` and receives `url` and `title`.
+
 **A table row has fewer or more cells than expected.**
 Rows shorter than the header are padded. Overflow cells are truncated and
 reported as `table_overflow` in pull-style warnings.
@@ -513,7 +553,7 @@ isTableNode, isTableRowNode, isTableCellNode,
 isTextNode, isEmphasisNode, isStrongNode, isStrikethroughNode,
 isInlineCodeNode, isLinkNode, isAutolinkNode, isImageNode,
 isSoftBreakNode, isHardBreakNode,
-isCitationReferenceNode, isCompleteNode
+isCitationReferenceNode, isLinkReferenceNode, isCompleteNode
 ```
 
 Exported types:
@@ -524,12 +564,13 @@ MarkdownParagraphNode, MarkdownHeadingNode, MarkdownBlockquoteNode,
 MarkdownListNode, MarkdownListItemNode, MarkdownCodeBlockNode,
 MarkdownThematicBreakNode, MarkdownTableNode, MarkdownTableRowNode,
 MarkdownTableCellNode, MarkdownCitationReferenceNode,
+MarkdownLinkReferenceNode,
 MarkdownTextNode, MarkdownEmphasisNode, MarkdownStrongNode,
 MarkdownStrikethroughNode, MarkdownInlineCodeNode, MarkdownLinkNode,
 MarkdownAutolinkNode, MarkdownImageNode, MarkdownSoftBreakNode,
 MarkdownHardBreakNode,
 StreamStatus, StreamState, StreamError, ParseEvent, ParseEventType,
-MarkdownWarning, Alignment, CitationDefinition,
+MarkdownWarning, Alignment, CitationDefinition, LinkDefinition,
 AstNode, AstNodeKind, ParseMode
 ```
 

@@ -44,6 +44,16 @@ function computeVersion(node: MarkdownNode): string {
       return `${node.type}:${node.status}`;
     case 'citation-reference':
       return `citation-reference:${node.status}:${(node as any).refId}:${(node as any).resolved}:${(node as any).index}`;
+    case 'link-reference': {
+      const parts = [
+        `link-reference:${node.status}:${(node as any).refId}:${(node as any).resolved}:${(node as any).url}:${(node as any).title}`,
+      ];
+      const children = (node as any).children as MarkdownNode[] | undefined;
+      if (children) {
+        for (const child of children) parts.push(computeVersion(child));
+      }
+      return parts.join('|');
+    }
     default: {
       const parts = [`${node.type}:${node.status}`];
       const children = (node as any).children as MarkdownNode[] | undefined;
@@ -65,6 +75,12 @@ function computeVersion(node: MarkdownNode): string {
           for (const [id, def] of citations) {
             parts.push(`CITE:${id}:${def.index}:${def.status}`);
             for (const child of def.children) parts.push(computeVersion(child));
+          }
+        }
+        const linkDefinitions = (node as any).linkDefinitions as Map<string, any> | undefined;
+        if (linkDefinitions) {
+          for (const [id, def] of linkDefinitions) {
+            parts.push(`LINKDEF:${id}:${def.url}:${def.title}:${def.status}`);
           }
         }
       }
@@ -90,6 +106,14 @@ function materializeNode(node: MarkdownNode): unknown {
         });
       }
       out.citations = newMap;
+    }
+    const linkDefinitions = (node as any).linkDefinitions as Map<string, any> | undefined;
+    if (linkDefinitions) {
+      const newMap = new Map<string, any>();
+      for (const [id, def] of linkDefinitions) {
+        newMap.set(id, { ...def });
+      }
+      out.linkDefinitions = newMap;
     }
   }
   return out;

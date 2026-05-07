@@ -14,7 +14,12 @@ import {
   ORDERED_LIST_MARKER_RE,
   UNORDERED_LIST_MARKER_RE,
   BLOCKQUOTE_PREFIX_RE,
+  LINK_DEF_RE,
+  LINK_REF_COLLAPSED_RE,
+  LINK_REF_FULL_RE,
+  LINK_REF_SHORTCUT_RE,
   getOrAssignCitationIndex,
+  normalizeLinkLabel,
   parseAlignmentRow,
 } from './internals';
 import { createInternal } from './create';
@@ -204,5 +209,54 @@ describe('measureLine', () => {
   });
   it('returns null marker for non-marker lines', () => {
     expect(measureLine('  paragraph text').marker).toBeNull();
+  });
+});
+
+describe('Link reference helpers', () => {
+  it('normalizes label: lowercase, collapse whitespace, trim', () => {
+    expect(normalizeLinkLabel('Foo')).toBe('foo');
+    expect(normalizeLinkLabel('  a   b  ')).toBe('a b');
+    expect(normalizeLinkLabel('A\tB\nC')).toBe('a b c');
+  });
+
+  it('LINK_DEF_RE matches `[id]: url "title"`', () => {
+    const m = LINK_DEF_RE.exec('[foo]: https://example.com "Title"');
+    expect(m).not.toBeNull();
+    expect(m![1]).toBe('foo');
+    expect(m![3]).toBe('https://example.com');
+    expect(m![4]).toBe('Title');
+  });
+
+  it('LINK_DEF_RE matches with no title', () => {
+    const m = LINK_DEF_RE.exec('[bar]: /local');
+    expect(m).not.toBeNull();
+    expect(m![1]).toBe('bar');
+    expect(m![3]).toBe('/local');
+    expect(m![4]).toBeUndefined();
+  });
+
+  it('LINK_DEF_RE does not match indented > 3 spaces', () => {
+    expect(LINK_DEF_RE.exec('    [foo]: /a')).toBeNull();
+  });
+
+  it('LINK_REF_FULL_RE matches [text][label]', () => {
+    const m = LINK_REF_FULL_RE.exec('[hello][world]rest');
+    expect(m).not.toBeNull();
+    expect(m![1]).toBe('hello');
+    expect(m![2]).toBe('world');
+  });
+
+  it('LINK_REF_COLLAPSED_RE matches [text][]', () => {
+    const m = LINK_REF_COLLAPSED_RE.exec('[hello][]rest');
+    expect(m).not.toBeNull();
+    expect(m![1]).toBe('hello');
+  });
+
+  it('LINK_REF_SHORTCUT_RE matches [label] not followed by [ or (', () => {
+    const m = LINK_REF_SHORTCUT_RE.exec('[hello] world');
+    expect(m).not.toBeNull();
+    expect(m![1]).toBe('hello');
+    expect(LINK_REF_SHORTCUT_RE.exec('[hello](url)')).toBeNull();
+    expect(LINK_REF_SHORTCUT_RE.exec('[hello][label]')).toBeNull();
   });
 });

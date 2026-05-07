@@ -142,4 +142,29 @@ describe('OpenAI-shaped Markdown streams', () => {
     parser!.finish();
     expect(parser!.root?.children[0]?.type).toBe('paragraph');
   });
+
+  it('parses reference-style links in output_text deltas', () => {
+    const parsers = feedOpenAIMarkdown([
+      {
+        type: 'response.output_text.delta',
+        item_id: 'msg_refs',
+        output_index: 0,
+        delta: 'Read [the guide][docs].\n',
+      },
+      {
+        type: 'response.output_text.delta',
+        item_id: 'msg_refs',
+        output_index: 0,
+        delta: '[docs]: https://example.com "Docs"\n',
+      },
+    ]);
+
+    const parser = parsers.get('msg_refs')!;
+    parser.finish();
+    const paragraph = parser.root!.children[0] as any;
+    const ref = paragraph.children.find((n: any) => n.type === 'link-reference');
+    expect(ref.resolved).toBe(true);
+    expect(ref.url).toBe('https://example.com');
+    expect(ref.title).toBe('Docs');
+  });
 });

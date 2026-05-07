@@ -45,7 +45,7 @@ describe('types', () => {
     expectTypeOf<InternalState>().toMatchTypeOf<StreamState>();
   });
 
-  it('AstNodeKind covers all 18 v0.1 node types', () => {
+  it('AstNodeKind covers all markdown node types', () => {
     type Kinds = AstNodeKind;
     expectTypeOf<Kinds>().toEqualTypeOf<
       | 'document'
@@ -66,6 +66,11 @@ describe('types', () => {
       | 'image'
       | 'soft-break'
       | 'hard-break'
+      | 'table'
+      | 'table-row'
+      | 'table-cell'
+      | 'citation-reference'
+      | 'link-reference'
     >();
   });
 
@@ -79,6 +84,10 @@ describe('types', () => {
       | 'code-fence'
       | 'code-indented'
       | 'inline'
+      | 'table'
+      | 'table-row'
+      | 'citation-def'
+      | 'link-def-title'
       | 'done'
       | 'error'
     >();

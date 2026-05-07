@@ -32,11 +32,13 @@ import type {
   MarkdownTextNode,
   MarkdownInlineNode,
   MarkdownCitationReferenceNode,
+  MarkdownLinkReferenceNode,
   MarkdownListItemNode,
   MarkdownTableNode,
   MarkdownTableRowNode,
   MarkdownTableCellNode,
   CitationReferenceAstNode,
+  LinkReferenceAstNode,
   ListItemAstNode,
   TableAstNode,
   TableRowAstNode,
@@ -45,6 +47,7 @@ import type {
   ParseEvent,
   PartialMarkdownParser,
   CitationDefinition,
+  LinkDefinition,
 } from './types';
 
 interface NodeSnapshot {
@@ -189,6 +192,30 @@ export function createPartialMarkdownParser(): PartialMarkdownParser {
         }
       }
 
+      // Sync resolved target fields for link-reference nodes.
+      if (md.type === 'link-reference' && ast.kind === 'link-reference') {
+        const linkMd = md as MarkdownLinkReferenceNode;
+        const linkAst = ast as LinkReferenceAstNode;
+        let changed = false;
+        if (linkMd.resolved !== linkAst.resolved) {
+          linkMd.resolved = linkAst.resolved;
+          changed = true;
+        }
+        if (linkMd.url !== linkAst.url) {
+          linkMd.url = linkAst.url;
+          changed = true;
+        }
+        if (linkMd.title !== linkAst.title) {
+          linkMd.title = linkAst.title;
+          changed = true;
+        }
+        if (linkMd.status !== linkAst.status) {
+          linkMd.status = linkAst.status;
+          changed = true;
+        }
+        if (changed) events.push({ type: 'value-updated', node: linkMd });
+      }
+
       // Sync task field for list-item nodes.
       if (md.type === 'list-item' && ast.kind === 'list-item') {
         const li = md as MarkdownListItemNode;
@@ -236,6 +263,26 @@ export function createPartialMarkdownParser(): PartialMarkdownParser {
         for (const refId of root.citations.keys()) {
           if (!state.citationDefs.has(refId)) root.citations.delete(refId);
         }
+
+        for (const [refId, def] of state.linkDefs) {
+          const existing = root.linkDefinitions.get(refId);
+          if (existing) {
+            existing.url = def.url;
+            existing.title = def.title;
+            existing.status = def.status;
+          } else {
+            root.linkDefinitions.set(refId, {
+              id: def.id,
+              label: def.label,
+              url: def.url,
+              title: def.title,
+              status: def.status,
+            });
+          }
+        }
+        for (const refId of root.linkDefinitions.keys()) {
+          if (!state.linkDefs.has(refId)) root.linkDefinitions.delete(refId);
+        }
       }
     }
 
@@ -270,6 +317,7 @@ export function createPartialMarkdownParser(): PartialMarkdownParser {
       case 'document':
         base.children = [];
         base.citations = new Map<string, CitationDefinition>();
+        base.linkDefinitions = new Map<string, LinkDefinition>();
         break;
       case 'paragraph':
       case 'heading':
@@ -310,6 +358,17 @@ export function createPartialMarkdownParser(): PartialMarkdownParser {
         base.refId = citeAst.refId;
         base.index = citeAst.index;  // citation index (shadows sibling position)
         base.resolved = citeAst.resolved;
+        break;
+      }
+      case 'link-reference': {
+        const refAst = ast as LinkReferenceAstNode;
+        base.refId = refAst.refId;
+        base.label = refAst.label;
+        base.form = refAst.form;
+        base.resolved = refAst.resolved;
+        base.url = refAst.url;
+        base.title = refAst.title;
+        base.children = [];
         break;
       }
     }

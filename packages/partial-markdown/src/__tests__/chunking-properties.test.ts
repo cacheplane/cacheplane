@@ -19,6 +19,7 @@ describe('chunk partition equivalence', () => {
     '- Parent\n  - Child\n  - Second child\n- Sibling\n\n',
     '| A | B |\n| --- | ---: |\n| left | right |\n',
     'See [^src1].\n\n[^src1]: Source title <https://example.com>\n',
+    'See [docs][guide] and [guide].\n\n[guide]: https://example.com "Guide"\n',
   ];
 
   for (const input of samples) {

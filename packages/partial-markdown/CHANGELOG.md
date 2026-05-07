@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.4.0 — UNRELEASED
+
+### Added
+
+- Streaming-aware CommonMark link reference support for full (`[text][label]`),
+  collapsed (`[label][]`), and shortcut (`[label]`) forms.
+- Link reference definitions are lifted into
+  `MarkdownDocumentNode.linkDefinitions: Map<string, LinkDefinition>`.
+- Forward resolution mutates existing `link-reference` nodes in place when a
+  matching definition arrives later in the stream.
+- New `MarkdownLinkReferenceNode`, `LinkDefinition`, and
+  `isLinkReferenceNode` exports.
+- New warning codes: `unresolved_link_ref`, `unused_link_def`, and
+  `duplicate_link_def`.
+
+### Notes for upgraders
+
+- `MarkdownDocumentNode` now has a required `linkDefinitions` Map. Existing
+  code constructing this type manually must initialize the Map.
+- Exhaustive `type` switches over inline nodes need a `link-reference` case.
+- Multi-line link definition titles remain unsupported and are parsed as
+  regular paragraph content after the first line.
+
 ## 0.3.2 — 2026-05-06
 
 ### Fixed

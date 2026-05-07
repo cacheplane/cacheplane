@@ -69,4 +69,24 @@ describe('Gemini-shaped Markdown streams', () => {
       expect(table.children).toHaveLength(2);
     }
   });
+
+  it('parses reference-style links across candidate part text chunks', () => {
+    const parser = feedGeminiMarkdown([
+      {
+        candidates: [{ content: { parts: [{ text: 'Read [docs][' }] } }],
+      },
+      {
+        candidates: [{ content: { parts: [{ text: 'guide].\n[guide]: /g' }] } }],
+      },
+      {
+        candidates: [{ content: { parts: [{ text: 'uide\n' }] } }],
+      },
+    ]);
+
+    parser.finish();
+    const paragraph = parser.root!.children[0] as any;
+    const ref = paragraph.children.find((n: any) => n.type === 'link-reference');
+    expect(ref.resolved).toBe(true);
+    expect(ref.url).toBe('/guide');
+  });
 });

@@ -23,6 +23,7 @@ import type {
   MarkdownTableRowNode,
   MarkdownTableCellNode,
   MarkdownCitationReferenceNode,
+  MarkdownLinkReferenceNode,
 } from './types';
 
 export function isDocumentNode(n: MarkdownNode): n is MarkdownDocumentNode { return n.type === 'document'; }
@@ -50,3 +51,4 @@ export function isTableNode(n: MarkdownNode): n is MarkdownTableNode { return n.
 export function isTableRowNode(n: MarkdownNode): n is MarkdownTableRowNode { return n.type === 'table-row'; }
 export function isTableCellNode(n: MarkdownNode): n is MarkdownTableCellNode { return n.type === 'table-cell'; }
 export function isCitationReferenceNode(n: MarkdownNode): n is MarkdownCitationReferenceNode { return n.type === 'citation-reference'; }
+export function isLinkReferenceNode(n: MarkdownNode): n is MarkdownLinkReferenceNode { return n.type === 'link-reference'; }
