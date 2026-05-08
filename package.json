@@ -1,6 +1,17 @@
 {
   "name": "@cacheplane/json-stream",
   "version": "0.0.1",
+  "description": "Small JSON stream parsing utilities used by Pretable streaming adapters.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cacheplane/pretable.git",
+    "directory": "packages/json-stream"
+  },
+  "homepage": "https://pretable.ai/docs/streaming/parsers",
+  "bugs": {
+    "url": "https://github.com/cacheplane/pretable/issues"
+  },
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
