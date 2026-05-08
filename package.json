@@ -1,6 +1,6 @@
 {
   "name": "@cacheplane/json-stream",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Small JSON stream parsing utilities used by Pretable streaming adapters.",
   "license": "MIT",
   "repository": {
