@@ -17,17 +17,21 @@ jobs:
 
       - uses: pnpm/action-setup@v6
 
+      # NOTE: intentionally NO `registry-url` here. When set, actions/setup-node
+      # writes an .npmrc with `_authToken=${NODE_AUTH_TOKEN}` and exports a
+      # non-empty placeholder token. With a token configured, npm uses
+      # token-auth and NEVER attempts the OIDC trusted-publishing exchange —
+      # the registry then rejects the placeholder with a 404. Omitting
+      # registry-url leaves no token configured (npm defaults to
+      # registry.npmjs.org), so OIDC trusted publishing engages.
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: 'pnpm'
-          registry-url: 'https://registry.npmjs.org'
 
       # The OIDC trusted-publishing token exchange is only implemented in npm
       # CLI >= 11.5.1 (Node 24.5.0+). Node 24's bundled npm can be older
-      # (11.3.x/11.4.x); without this upgrade `npm publish` silently skips the
-      # OIDC exchange and falls back to setup-node's placeholder NODE_AUTH_TOKEN,
-      # which the registry rejects with a 404. Pin to a known-good major.
+      # (11.3.x/11.4.x), so upgrade explicitly.
       - run: npm install -g npm@^11.5.1
 
       - run: pnpm install --frozen-lockfile
@@ -59,6 +63,6 @@ jobs:
       # token exchange is implemented in npm CLI 11.5.1+, not in pnpm 9.
       - name: Publish to npm with OIDC trusted publishing
         working-directory: ${{ steps.pkg.outputs.dir }}
-        run: npm publish --access public --provenance
+        run: npm publish --access public --provenance --loglevel verbose
         env:
           NPM_CONFIG_PROVENANCE: 'true'
