@@ -17,14 +17,18 @@ jobs:
 
       - uses: pnpm/action-setup@v6
 
-      # Node 24 ships npm 11.x natively, which implements the OIDC
-      # trusted-publishing flow. Earlier Node versions ship npm 10.x and
-      # require a separate `npm install -g npm@latest` step.
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
+
+      # The OIDC trusted-publishing token exchange is only implemented in npm
+      # CLI >= 11.5.1 (Node 24.5.0+). Node 24's bundled npm can be older
+      # (11.3.x/11.4.x); without this upgrade `npm publish` silently skips the
+      # OIDC exchange and falls back to setup-node's placeholder NODE_AUTH_TOKEN,
+      # which the registry rejects with a 404. Pin to a known-good major.
+      - run: npm install -g npm@^11.5.1
 
       - run: pnpm install --frozen-lockfile
 
