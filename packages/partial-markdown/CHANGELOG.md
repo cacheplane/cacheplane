@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.2 — 2026-06-22
+
+### Added
+
+- **Backslash-escape handling for inline punctuation (B.1).** A backslash
+  before an ASCII-punctuation character now renders the **literal character**
+  with the backslash dropped, and the escaped character does **not** trigger
+  its markdown construct: `\*not bold\*` → `*not bold*`, `\_x\_` → `_x_`,
+  `\$5` → `$5`, `` \` `` → a literal backtick, `\#` → `#`, `\\` → a single
+  backslash. Escaped delimiters are also skipped when matching emphasis
+  closers, so `*a\*b*` is emphasis containing the literal `a*b`.
+- The four bracket characters `( ) [ ]` are excluded from escaping while
+  `math.bracket` is enabled (the default), so the `\(…\)` / `\[…\]` math
+  delimiters keep working. When `math.bracket` is disabled, those brackets
+  follow CommonMark and become escapable too.
+
 ## 0.4.1 — 2026-05-07
 
 ### Fixed

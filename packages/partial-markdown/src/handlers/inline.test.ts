@@ -172,3 +172,103 @@ describe('parseInline — graceful malformed input', () => {
     expect(para.children.length).toBeGreaterThan(0);
   });
 });
+
+describe('parseInline — backslash escapes (B.1)', () => {
+  function paraWith(opts?: Parameters<typeof createInternal>[0]) {
+    let s = createInternal(opts);
+    const [s1, docId] = allocId(s);
+    s = { ...s1, rootId: docId };
+    s = appendNode(s, { id: docId, kind: 'document', parentId: null, status: 'streaming', children: [] });
+    const [s2, paraId] = allocId(s);
+    s = s2;
+    s = appendNode(s, { id: paraId, kind: 'paragraph', parentId: docId, status: 'streaming', children: [] } as ParagraphAstNode);
+    return { state: s, paraId };
+  }
+  function kindsOf(out: ReturnType<typeof parseInline>, paraId: number): string[] {
+    const flat: string[] = [];
+    const walk = (id: number) => {
+      const n = out.nodes[id]; if (!n) return;
+      flat.push(n.kind);
+      const kids = (n as { children?: number[] }).children;
+      if (Array.isArray(kids)) kids.forEach(walk);
+    };
+    (out.nodes[paraId] as ParagraphAstNode).children.forEach(walk);
+    return flat;
+  }
+  function textOf(out: ReturnType<typeof parseInline>, paraId: number): string {
+    const collect = (id: number): string => {
+      const n = out.nodes[id]; if (!n) return '';
+      const t = (n as { text?: string }).text;
+      if (t !== undefined) return t;
+      const kids = (n as { children?: number[] }).children;
+      return Array.isArray(kids) ? kids.map(collect).join('') : '';
+    };
+    return (out.nodes[paraId] as ParagraphAstNode).children.map(collect).join('');
+  }
+
+  it('escaped emphasis markers render literally, no emphasis/strong', () => {
+    const { state, paraId } = paraWith();
+    const out = parseInline(state, paraId, '\\*not bold\\*');
+    expect(kindsOf(out, paraId).every(k => k !== 'emphasis' && k !== 'strong')).toBe(true);
+    expect(textOf(out, paraId)).toBe('*not bold*');
+  });
+
+  it('escaped underscore renders literally', () => {
+    const { state, paraId } = paraWith();
+    const out = parseInline(state, paraId, '\\_x\\_');
+    expect(textOf(out, paraId)).toBe('_x_');
+  });
+
+  it('escaped dollar renders literally, no math', () => {
+    const { state, paraId } = paraWith();
+    const out = parseInline(state, paraId, 'price \\$5');
+    expect(kindsOf(out, paraId).every(k => k !== 'math-inline')).toBe(true);
+    expect(textOf(out, paraId)).toBe('price $5');
+  });
+
+  it('escaped backtick renders literally, no code span', () => {
+    const { state, paraId } = paraWith();
+    const out = parseInline(state, paraId, 'a \\` b');
+    expect(kindsOf(out, paraId).every(k => k !== 'inline-code')).toBe(true);
+    expect(textOf(out, paraId)).toBe('a ` b');
+  });
+
+  it('escaped hash and tilde render literally', () => {
+    const { state, paraId } = paraWith();
+    const out = parseInline(state, paraId, 'a \\# \\~ b');
+    expect(textOf(out, paraId)).toBe('a # ~ b');
+  });
+
+  it('escaped backslash renders one literal backslash', () => {
+    const { state, paraId } = paraWith();
+    const out = parseInline(state, paraId, 'a \\\\ b');
+    expect(textOf(out, paraId)).toBe('a \\ b');
+  });
+
+  it('backslash before a non-punctuation char stays literal', () => {
+    const { state, paraId } = paraWith();
+    const out = parseInline(state, paraId, 'a\\b');
+    expect(textOf(out, paraId)).toBe('a\\b');
+  });
+
+  it('escape works inside emphasis (inner re-parse)', () => {
+    const { state, paraId } = paraWith();
+    const out = parseInline(state, paraId, '*a\\*b*');
+    const kinds = kindsOf(out, paraId);
+    expect(kinds.includes('emphasis')).toBe(true);
+    expect(textOf(out, paraId)).toBe('a*b');
+  });
+
+  it('with math.bracket ON (default), \\( stays inline math (not escaped)', () => {
+    const { state, paraId } = paraWith();
+    const out = parseInline(state, paraId, '\\(x\\)');
+    expect(kindsOf(out, paraId).includes('math-inline')).toBe(true);
+  });
+
+  it('with math.bracket OFF, \\( \\) escape to literal parens', () => {
+    const { state, paraId } = paraWith({ math: { bracket: false } });
+    const out = parseInline(state, paraId, '\\(x\\)');
+    expect(kindsOf(out, paraId).includes('math-inline')).toBe(false);
+    expect(textOf(out, paraId)).toBe('(x)');
+  });
+});

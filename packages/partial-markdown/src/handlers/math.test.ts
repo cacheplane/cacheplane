@@ -56,13 +56,15 @@ describe('math parser integration', () => {
     expect(math).toMatchObject({ text: 'x^2', delimiter: '\\(\\)' });
   });
 
-  it('leaves disabled delimiter families as text', () => {
+  it('leaves disabled delimiter families as text (escapes still apply)', () => {
     const parser = createPartialMarkdownParser({ math: { dollar: false, bracket: false } });
     parser.push('Result is $a+b$ and \\(x^2\\).\n');
 
     const paragraph = firstParagraph(parser);
     expect(paragraph.children.some((node: any) => node.type === 'math-inline')).toBe(false);
-    expect(paragraph.children.map((node: any) => node.text ?? '').join('')).toBe('Result is $a+b$ and \\(x^2\\).');
+    // `$a+b$` is plain text (no backslash). With math.bracket off, `\(` and `\)`
+    // are CommonMark backslash escapes → literal `(` / `)` (B.1).
+    expect(paragraph.children.map((node: any) => node.text ?? '').join('')).toBe('Result is $a+b$ and (x^2).');
   });
 
   it('parses single-line display math', () => {
