@@ -8,13 +8,23 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.mjs" },
-      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./package.json": "./package.json"
   },
   "sideEffects": false,
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
@@ -25,7 +35,15 @@
     "publint": "publint",
     "attw": "attw --pack ."
   },
-  "keywords": ["markdown", "streaming", "parser", "ast", "incremental", "partial", "llm"],
+  "keywords": [
+    "markdown",
+    "streaming",
+    "parser",
+    "ast",
+    "incremental",
+    "partial",
+    "llm"
+  ],
   "author": "Cacheplane",
   "license": "MIT",
   "repository": {
@@ -35,6 +53,14 @@
   },
   "homepage": "https://github.com/cacheplane/cacheplane/tree/main/packages/partial-markdown#readme",
   "bugs": "https://github.com/cacheplane/cacheplane/issues",
-  "publishConfig": { "access": "public", "provenance": true },
-  "engines": { "node": ">=20" }
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "fast-check": "^4.8.0"
+  }
 }
