@@ -41,6 +41,12 @@ import { matchInlineHtml } from './html';
  */
 const HTML_INLINE_PENDING_CAP = 4096;
 
+// CommonMark ASCII punctuation that a backslash escapes to its literal char.
+const ESCAPABLE = new Set('!"#$%&\'()*+,-./:;<=>?@[]^_`{|}~\\'.split(''));
+// Brackets reserved for the \(..\) / \[..\] math delimiters while math.bracket
+// is enabled — excluded from escape handling so the math feature still works.
+const MATH_BRACKET_CHARS = new Set(['(', ')', '[', ']']);
+
 export function parseInline(state: InternalState, parentId: number, rawLine: string): InternalState {
   let s = state;
 
@@ -83,6 +89,23 @@ export function parseInline(state: InternalState, parentId: number, rawLine: str
           cursor.i = closer + openerLength(opener.kind);
           continue;
         }
+      }
+    }
+
+    // Backslash escape: \<punct> → literal <punct>, backslash dropped, no
+    // construct. Runs after the inline-math check so a complete \(..\) span
+    // still wins; the four bracket chars stay reserved for math while
+    // math.bracket is enabled.
+    if (ch === '\\') {
+      const next = line[cursor.i + 1];
+      if (
+        next != null &&
+        ESCAPABLE.has(next) &&
+        !(s.options.math.bracket && MATH_BRACKET_CHARS.has(next))
+      ) {
+        s = appendInlineNode(s, parentId, makeText(s, parentId, next));
+        cursor.i += 2;
+        continue;
       }
     }
 
@@ -234,7 +257,7 @@ function matchPairedRun(
 
   let j = i;
   while (j < line.length) {
-    if (line[j] === ch) {
+    if (line[j] === ch && !isBackslashEscaped(line, j)) {
       let k = j;
       while (k < line.length && line[k] === ch) k++;
       if (k - j === runLength) {
@@ -246,6 +269,13 @@ function matchPairedRun(
     }
   }
   return null;
+}
+
+/** True when the char at `pos` is preceded by an odd run of backslashes (escaped). */
+function isBackslashEscaped(line: string, pos: number): boolean {
+  let n = 0;
+  for (let p = pos - 1; p >= 0 && line[p] === '\\'; p--) n++;
+  return n % 2 === 1;
 }
 
 function matchLinkOrImage(line: string, start: number): {
@@ -306,7 +336,7 @@ function matchTextRun(line: string, start: number): { text: string; endIndex: nu
     if (
       c === '*' || c === '_' || c === '~' || c === '`' || c === '[' ||
       c === '<' || c === '!' || c === '$' ||
-      (c === '\\' && (line[i + 1] === '(' || line[i + 1] === '['))
+      (c === '\\' && line[i + 1] != null && ESCAPABLE.has(line[i + 1]!))
     ) break;
     text += c;
     i++;
