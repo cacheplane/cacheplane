@@ -119,23 +119,24 @@ describe('B.3 — resilience (fuzz)', () => {
     );
   });
 
-  it('parses pathological inputs without crashing or hanging', () => {
-    // No wall-clock assertions here: absolute timing flakes across hardware and
-    // under coverage instrumentation. We assert no-throw; a true hang is caught
-    // by the test runner's own timeout. Sizes are kept modest so the two
-    // known-O(n^2) patterns (`[`-run, `` ` ``-run — every unmatched opener
-    // re-scans the line; tracked as a separate perf fix) still finish quickly.
+  it('parses pathological single-token runs in bounded (linear) time', () => {
+    // No wall-clock assertions (absolute timing flakes across hardware and under
+    // coverage). Instead, all patterns — including `[` and `` ` `` runs, which
+    // used to be O(n^2) — run at full 20k size; if any regresses to quadratic it
+    // blows the explicit test timeout below. A true hang is caught the same way.
     const inputs = [
-      '*'.repeat(10000),
-      '\\'.repeat(10000),
-      '*_~`'.repeat(2500),
-      '#'.repeat(10000) + '\n',
-      '> '.repeat(5000),
-      '['.repeat(2000),
-      '`'.repeat(2000),
+      '*'.repeat(20000),
+      '_'.repeat(20000),
+      '`'.repeat(20000),
+      '['.repeat(20000),
+      '!['.repeat(10000),
+      '\\'.repeat(20000),
+      '*_~`'.repeat(5000),
+      '#'.repeat(20000) + '\n',
+      '> '.repeat(10000),
     ];
     for (const input of inputs) {
       expect(() => parseWhole(input)).not.toThrow();
     }
-  }, 30000); // explicit generous timeout: O(n^2) [/backtick runs are slow under coverage
+  }, 20000); // a quadratic regression at 20k would exceed this under coverage
 });
