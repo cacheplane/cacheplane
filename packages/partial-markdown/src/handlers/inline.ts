@@ -59,6 +59,11 @@ export function parseInline(state: InternalState, parentId: number, rawLine: str
   }
 
   const cursor = { i: 0 };
+  // Index of the last `]` on the line. A link/image/citation/link-ref all
+  // require a `]` after their opening `[`, so the `[`/`![` matchers are skipped
+  // when none can follow — turning a line of N unmatched `[` from O(N^2) (each
+  // re-scanning the rest of the line) into O(N).
+  const lastRBracket = line.lastIndexOf(']');
 
   while (cursor.i < line.length) {
     const ch = line[cursor.i];
@@ -72,6 +77,14 @@ export function parseInline(state: InternalState, parentId: number, rawLine: str
         cursor.i = result.endIndex;
         continue;
       }
+      // No closer for this backtick run — emit the whole contiguous run as
+      // literal text in one step. Avoids O(N^2) re-counting on long unmatched
+      // runs (e.g. a line of N backticks).
+      let bt = cursor.i;
+      while (bt < line.length && line[bt] === '`') bt++;
+      s = appendInlineNode(s, parentId, makeText(s, parentId, line.slice(cursor.i, bt)));
+      cursor.i = bt;
+      continue;
     }
 
     // Inline math: $..$ and \(..\). Code spans above remain opaque.
@@ -123,7 +136,7 @@ export function parseInline(state: InternalState, parentId: number, rawLine: str
     }
 
     // Image: ![alt](url "title?")
-    if (ch === '!' && line[cursor.i + 1] === '[') {
+    if (ch === '!' && line[cursor.i + 1] === '[' && cursor.i + 1 < lastRBracket) {
       const result = matchLinkOrImage(line, cursor.i + 1);
       if (result) {
         s = appendInlineNode(s, parentId, makeImage(s, parentId, result.text, result.url, result.title));
@@ -133,7 +146,7 @@ export function parseInline(state: InternalState, parentId: number, rawLine: str
     }
 
     // Citation reference: [^id] (must precede the link `[` matcher).
-    if (ch === '[' && line[cursor.i + 1] === '^') {
+    if (ch === '[' && line[cursor.i + 1] === '^' && cursor.i < lastRBracket) {
       const m = CITATION_REF_RE.exec(line.slice(cursor.i));
       if (m) {
         const refId = m[1]!;
@@ -165,7 +178,7 @@ export function parseInline(state: InternalState, parentId: number, rawLine: str
     }
 
     // Link: [text](url "title?")
-    if (ch === '[') {
+    if (ch === '[' && cursor.i < lastRBracket) {
       const result = matchLinkOrImage(line, cursor.i);
       if (result) {
         const inner = parsedInner(s, result.text);
@@ -215,7 +228,7 @@ export function parseInline(state: InternalState, parentId: number, rawLine: str
     }
 
     // Plain text run.
-    const textRun = matchTextRun(line, cursor.i);
+    const textRun = matchTextRun(line, cursor.i, lastRBracket);
     s = appendInlineNode(s, parentId, makeText(s, parentId, textRun.text));
     cursor.i = textRun.endIndex;
   }
@@ -328,14 +341,21 @@ function matchAutolink(line: string, start: number): { url: string; endIndex: nu
   return { url, endIndex: i + 1 };
 }
 
-function matchTextRun(line: string, start: number): { text: string; endIndex: number } {
+function matchTextRun(
+  line: string,
+  start: number,
+  lastRBracket: number,
+): { text: string; endIndex: number } {
   let i = start;
   let text = '';
   while (i < line.length) {
     const c = line[i];
     if (
-      c === '*' || c === '_' || c === '~' || c === '`' || c === '[' ||
-      c === '<' || c === '!' || c === '$' ||
+      c === '*' || c === '_' || c === '~' || c === '`' ||
+      c === '<' || c === '$' ||
+      // `[` and `!` can only open a construct if a `]` follows; otherwise let
+      // them flow into the text run so long unmatched runs stay O(N), not O(N^2).
+      ((c === '[' || c === '!') && i < lastRBracket) ||
       (c === '\\' && line[i + 1] != null && ESCAPABLE.has(line[i + 1]!))
     ) break;
     text += c;

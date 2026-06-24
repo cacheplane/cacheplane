@@ -272,3 +272,49 @@ describe('parseInline — backslash escapes (B.1)', () => {
     expect(textOf(out, paraId)).toBe('(x)');
   });
 });
+
+describe('parseInline — unmatched opener runs render as literal text (perf fast-path)', () => {
+  function para() {
+    let s = createInternal();
+    const [s1, docId] = allocId(s);
+    s = { ...s1, rootId: docId };
+    s = appendNode(s, { id: docId, kind: 'document', parentId: null, status: 'streaming', children: [] });
+    const [s2, paraId] = allocId(s);
+    s = s2;
+    s = appendNode(s, { id: paraId, kind: 'paragraph', parentId: docId, status: 'streaming', children: [] } as ParagraphAstNode);
+    return { state: s, paraId };
+  }
+  function txt(out: ReturnType<typeof parseInline>, paraId: number): string {
+    const collect = (id: number): string => {
+      const n = out.nodes[id]; if (!n) return '';
+      const t = (n as { text?: string }).text;
+      if (t !== undefined) return t;
+      const kids = (n as { children?: number[] }).children;
+      return Array.isArray(kids) ? kids.map(collect).join('') : '';
+    };
+    return (out.nodes[paraId] as ParagraphAstNode).children.map(collect).join('');
+  }
+
+  it('a run of [ with no closing ] is literal text, no link', () => {
+    const { state, paraId } = para();
+    const out = parseInline(state, paraId, '[[[ no close');
+    const kinds = (out.nodes[paraId] as ParagraphAstNode).children.map((id) => out.nodes[id]?.kind);
+    expect(kinds).not.toContain('link');
+    expect(txt(out, paraId)).toBe('[[[ no close');
+  });
+
+  it('an unmatched backtick run is literal text, no code span', () => {
+    const { state, paraId } = para();
+    const out = parseInline(state, paraId, '```not code');
+    const kinds = (out.nodes[paraId] as ParagraphAstNode).children.map((id) => out.nodes[id]?.kind);
+    expect(kinds).not.toContain('inline-code');
+    expect(txt(out, paraId)).toBe('```not code');
+  });
+
+  it('still parses a real link when ] is present (guard does not over-skip)', () => {
+    const { state, paraId } = para();
+    const out = parseInline(state, paraId, 'see [Angular](https://angular.dev) now');
+    const kinds = (out.nodes[paraId] as ParagraphAstNode).children.map((id) => out.nodes[id]?.kind);
+    expect(kinds).toContain('link');
+  });
+});

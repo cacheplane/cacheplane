@@ -16,6 +16,14 @@
   delimiters keep working. When `math.bracket` is disabled, those brackets
   follow CommonMark and become escapable too.
 
+### Fixed
+
+- **O(n²) inline parsing on long single-token runs.** A line of many unmatched
+  `` ` ``, `[`, or `!` characters previously re-scanned the rest of the line for
+  each one (quadratic; a 20 k-char run took seconds). Unmatched backtick runs
+  now emit in one step, and `[`/`!` are only treated as construct openers when a
+  `]` follows — making these inputs linear. Output is unchanged for real content.
+
 ## 0.4.1 — 2026-05-07
 
 ### Fixed
