@@ -72,3 +72,56 @@ describe('B.2 — streaming open-line rendering', () => {
     expect(JSON.stringify(doc.children[0])).toContain('hello');
   });
 });
+
+describe('B.2 — optimistic mid-construct rendering on the open line', () => {
+  const block0 = (p: ReturnType<typeof createPartialMarkdownParser>) =>
+    JSON.stringify((materialize(p.root) as any).children[0]);
+  const textOf = (node: any): string =>
+    node.text ?? (node.children ? node.children.map(textOf).join('') : '');
+
+  it('optimistically renders an unterminated **strong', () => {
+    const p = createPartialMarkdownParser();
+    p.push('say **bold'); // open, no closer
+    expect(block0(p)).toContain('strong');
+  });
+
+  it('optimistically renders an unterminated _emphasis', () => {
+    const p = createPartialMarkdownParser();
+    p.push('an _emph');
+    expect(block0(p)).toContain('emphasis');
+  });
+
+  it('optimistically renders an unterminated `code', () => {
+    const p = createPartialMarkdownParser();
+    p.push('run `npm inst');
+    expect(block0(p)).toContain('inline-code');
+  });
+
+  it('does NOT emphasize a spaced asterisk (left-flanking guard: "2 * 3")', () => {
+    const p = createPartialMarkdownParser();
+    p.push('2 * 3');
+    const s = block0(p);
+    expect(s).not.toContain('emphasis');
+    expect(s).not.toContain('strong');
+  });
+
+  it('a finished/committed unterminated ** stays CommonMark-literal (no optimism)', () => {
+    const p = createPartialMarkdownParser();
+    p.push('**bold');
+    p.finish();
+    const doc = materialize(p.root) as any;
+    expect(JSON.stringify(doc.children[0])).not.toContain('strong');
+    expect(textOf(doc.children[0])).toBe('**bold');
+  });
+
+  it('the optimistic construct flips to a real one when the closer arrives', () => {
+    const p = createPartialMarkdownParser();
+    p.push('**bo');
+    expect(block0(p)).toContain('strong');
+    p.push('ld** done\n'); // closer arrives + newline commits
+    const doc = materialize(p.root) as any;
+    const strong = doc.children[0].children.find((c: any) => c.type === 'strong');
+    expect(strong).toBeTruthy();
+    expect(strong.status).toBe('complete');
+  });
+});

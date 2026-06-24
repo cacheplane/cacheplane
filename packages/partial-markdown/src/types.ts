@@ -343,6 +343,14 @@ export interface InternalState extends StreamState {
   /** Active node id at the deepest level of the parser, if any. */
   currentNodeId: number | null;
   options: ResolvedParserOptions;
+  /**
+   * Internal: when true, the inline parser renders unterminated emphasis /
+   * strong / strikethrough / code optimistically (in-progress constructs
+   * spanning to end-of-line) instead of leaving the raw marker literal. Set
+   * ONLY by the open-line streaming projection; the committed/finished path
+   * leaves it falsy, so finished output stays CommonMark-correct.
+   */
+  optimisticInline?: boolean;
   /** When in math mode, which opener was used so we know how to close. */
   mathOpener: '$' | '$$' | '\\(' | '\\[' | null;
   /** Currently open math node id, if any. */

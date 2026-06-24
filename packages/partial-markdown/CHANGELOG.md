@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.1 — 2026-06-24
+
+### Added
+
+- **Optimistic mid-construct rendering on the open line.** Building on 0.5.0's
+  streaming open-line projection, an *unterminated* inline construct now renders
+  as its in-progress node instead of a literal marker: `**bold` → an in-progress
+  `strong`, `_em` → `emphasis`, `` `code `` → `inline-code` — spanning to the end
+  of the open line and flipping to the real (closed) construct when the closer
+  streams in. A left-flanking guard (content must immediately follow the opener)
+  keeps `2 * 3` and a trailing `**` literal, avoiding spurious emphasis.
+
+  This affects **only** the open (streaming) line. The committed/finished path is
+  unchanged and stays CommonMark-correct (an unterminated `**bold` in a finished
+  document is still literal text). Chunk-invariance + fuzz suites unaffected.
+
 ## 0.5.0 — 2026-06-24
 
 ### Changed
