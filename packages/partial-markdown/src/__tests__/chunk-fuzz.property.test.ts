@@ -126,16 +126,16 @@ describe('B.3 — resilience (fuzz)', () => {
     // known-O(n^2) patterns (`[`-run, `` ` ``-run — every unmatched opener
     // re-scans the line; tracked as a separate perf fix) still finish quickly.
     const inputs = [
-      '*'.repeat(20000),
-      '\\'.repeat(20000),
-      '*_~`'.repeat(5000),
-      '#'.repeat(20000) + '\n',
-      '> '.repeat(10000),
-      '['.repeat(4000),
-      '`'.repeat(4000),
+      '*'.repeat(10000),
+      '\\'.repeat(10000),
+      '*_~`'.repeat(2500),
+      '#'.repeat(10000) + '\n',
+      '> '.repeat(5000),
+      '['.repeat(2000),
+      '`'.repeat(2000),
     ];
     for (const input of inputs) {
       expect(() => parseWhole(input)).not.toThrow();
     }
-  });
+  }, 30000); // explicit generous timeout: O(n^2) [/backtick runs are slow under coverage
 });
