@@ -24,6 +24,7 @@
 import { createInternal } from './create';
 import { pushInternal } from './push';
 import { finishInternal } from './finish';
+import { handleBlockLine } from './handlers/block';
 import type {
   AstNode,
   InternalState,
@@ -427,18 +428,69 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
     return base;
   }
 
+  // ── Streaming open-line projection (B.2) ──────────────────────────────────
+  // Build a fresh MarkdownNode subtree from a preview AST node, marked
+  // `streaming`. Used only for the open (unterminated) line, which changes
+  // every push — so these nodes are intentionally rebuilt rather than mirrored.
+  function astToStreamingNode(id: number, nodes: readonly (AstNode | undefined)[]): MarkdownNode {
+    const ast = nodes[id]!;
+    const md = createMirrorNode(ast);
+    (md as any).status = 'streaming';
+    const kids = (ast as any).children;
+    if (Array.isArray(kids)) {
+      (md as any).children = kids.map((cid: number, i: number) => {
+        const c = astToStreamingNode(cid, nodes);
+        (c as any).index = i;
+        (c as any).parent = md;
+        return c;
+      });
+    }
+    return md;
+  }
+
+  // Project the committed document with the open `lineBuffer` parsed and grafted
+  // on. Runs the block handler on an immutable COPY (committed state + mirror are
+  // never touched); committed blocks (same AST object in the preview) reuse their
+  // mirror nodes so their identity is preserved across pushes.
+  function buildStreamingRoot(committedDoc: MarkdownDocumentNode): MarkdownDocumentNode {
+    const preview = handleBlockLine({ ...state, lineBuffer: '' }, state.lineBuffer);
+    if (preview.rootId === null) return committedDoc;
+    const prevDoc = preview.nodes[preview.rootId] as any;
+    const childIds: number[] = prevDoc?.children ?? [];
+    const children: MarkdownNode[] = childIds.map((cid, i) => {
+      if (preview.nodes[cid] === state.nodes[cid] && mirror.has(cid)) {
+        return mirror.get(cid)!; // unchanged committed block — reuse (identity)
+      }
+      const node = astToStreamingNode(cid, preview.nodes);
+      (node as any).index = i;
+      return node;
+    });
+    return { ...(committedDoc as any), children } as MarkdownDocumentNode;
+  }
+
+  // Memoized streaming projection — rebuilt once per push, so repeated `root` /
+  // getByPath reads within one state return the SAME object.
+  let openLineRoot: MarkdownDocumentNode | null = null;
+
   const parser: PartialMarkdownParser = {
     push(chunk: string): ParseEvent[] {
+      openLineRoot = null;
       state = pushInternal(state, chunk);
       return syncMirror();
     },
     finish(): ParseEvent[] {
+      openLineRoot = null;
       state = finishInternal(state);
       return syncMirror();
     },
     get root(): MarkdownDocumentNode | null {
       if (state.rootId === null) return null;
-      return (mirror.get(state.rootId) ?? null) as MarkdownDocumentNode | null;
+      const committed = (mirror.get(state.rootId) ?? null) as MarkdownDocumentNode | null;
+      // Fast path: nothing buffered → the stable committed document.
+      if (!committed || !state.lineBuffer) return committed;
+      // Open line present → graft its parsed, streaming projection (B.2), once.
+      if (!openLineRoot) openLineRoot = buildStreamingRoot(committed);
+      return openLineRoot;
     },
     getByPath(path: string): MarkdownNode | null {
       if (path === '') return parser.root;
