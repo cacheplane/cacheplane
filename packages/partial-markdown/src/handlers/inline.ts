@@ -49,6 +49,7 @@ const MATH_BRACKET_CHARS = new Set(['(', ')', '[', ']']);
 
 export function parseInline(state: InternalState, parentId: number, rawLine: string): InternalState {
   let s = state;
+  const optimistic = state.optimisticInline === true;
 
   // If a previous call left a pending partial HTML tag, prepend it to this
   // line and clear the buffer before scanning.
@@ -71,7 +72,7 @@ export function parseInline(state: InternalState, parentId: number, rawLine: str
 
     // Inline code
     if (ch === '`') {
-      const result = matchInlineCode(line, cursor.i);
+      const result = matchInlineCode(line, cursor.i, optimistic);
       if (result) {
         s = appendInlineNode(s, parentId, makeInlineCode(s, parentId, result.text));
         cursor.i = result.endIndex;
@@ -124,7 +125,7 @@ export function parseInline(state: InternalState, parentId: number, rawLine: str
 
     // Emphasis / strong / strikethrough
     if (ch === '*' || ch === '_' || ch === '~') {
-      const result = matchPairedRun(line, cursor.i, ch);
+      const result = matchPairedRun(line, cursor.i, ch, optimistic);
       if (result) {
         // Recursively parse the inner content via a phantom parent.
         const inner = parsedInner(s, line.slice(result.contentStart, result.contentEnd));
@@ -238,7 +239,9 @@ export function parseInline(state: InternalState, parentId: number, rawLine: str
 
 // ── Token matchers (return null when no match) ─────────────────────────────
 
-function matchInlineCode(line: string, start: number): { text: string; endIndex: number } | null {
+function matchInlineCode(
+  line: string, start: number, optimistic = false,
+): { text: string; endIndex: number } | null {
   let i = start;
   while (i < line.length && line[i] === '`') i++;
   const tickCount = i - start;
@@ -256,11 +259,16 @@ function matchInlineCode(line: string, start: number): { text: string; endIndex:
       j++;
     }
   }
+  // No closing run — render the in-progress code span optimistically on the
+  // open line (committed/finished path leaves it literal).
+  if (optimistic && i < line.length) {
+    return { text: line.slice(i), endIndex: line.length };
+  }
   return null;
 }
 
 function matchPairedRun(
-  line: string, start: number, ch: string,
+  line: string, start: number, ch: string, optimistic = false,
 ): { contentStart: number; contentEnd: number; endIndex: number; runLength: number } | null {
   let i = start;
   while (i < line.length && line[i] === ch) i++;
@@ -280,6 +288,13 @@ function matchPairedRun(
     } else {
       j++;
     }
+  }
+  // No closer. In the open-line streaming projection, render it optimistically
+  // as an in-progress construct spanning to end-of-line — but only when content
+  // immediately follows the opener (a left-flanking guard, so `2 * 3` and a
+  // trailing `**` stay literal, not a spurious emphasis).
+  if (optimistic && i < line.length && line[i] !== ' ' && line[i] !== '\t') {
+    return { contentStart: i, contentEnd: line.length, endIndex: line.length, runLength };
   }
   return null;
 }

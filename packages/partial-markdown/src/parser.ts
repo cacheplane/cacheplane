@@ -453,7 +453,10 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
   // never touched); committed blocks (same AST object in the preview) reuse their
   // mirror nodes so their identity is preserved across pushes.
   function buildStreamingRoot(committedDoc: MarkdownDocumentNode): MarkdownDocumentNode {
-    const preview = handleBlockLine({ ...state, lineBuffer: '' }, state.lineBuffer);
+    const preview = handleBlockLine(
+      { ...state, lineBuffer: '', optimisticInline: true },
+      state.lineBuffer,
+    );
     if (preview.rootId === null) return committedDoc;
     const prevDoc = preview.nodes[preview.rootId] as any;
     const childIds: number[] = prevDoc?.children ?? [];
