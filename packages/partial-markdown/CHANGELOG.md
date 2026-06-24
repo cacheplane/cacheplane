@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.0 — 2026-06-24
+
+### Changed
+
+- **Streaming open-line rendering (B.2).** `parser.root` now includes the open
+  (unterminated) line — the text after the last newline — parsed and grafted on
+  with `status: 'streaming'`, so consumers render in-progress content instead of
+  waiting for a newline. The open line continues the last open paragraph when
+  appropriate, or starts a new streaming block after a blank line. On `finish()`
+  (or once a newline commits the line) it becomes a normal `complete` node.
+
+  Committed blocks keep their referential identity across pushes; only the
+  changing open-line region is re-projected. This is a behavior change for
+  consumers that previously relied on the open line being buffered/hidden until
+  a newline. Note: an *unterminated* inline construct (e.g. `**bold` before its
+  closing `**`) still renders its literal marker until the closer arrives, then
+  snaps to formatted — fully optimistic mid-construct rendering is future work.
+
 ## 0.4.2 — 2026-06-22
 
 ### Added

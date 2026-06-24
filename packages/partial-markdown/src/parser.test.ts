@@ -31,11 +31,13 @@ describe('createPartialMarkdownParser', () => {
     expect(updates.length).toBeGreaterThan(0);
   });
 
-  it('preserves node identity across pushes (same JS reference)', () => {
+  it('preserves committed node identity across pushes (same JS reference)', () => {
+    // Newline-terminated content commits, so the document reference is stable.
+    // (An open, unterminated line intentionally re-projects each push — B.2.)
     const p = createPartialMarkdownParser();
-    p.push('Hello');
+    p.push('Hello world.\n');
     const beforeRoot = p.root;
-    p.push(' world.');
+    p.push('\nMore.\n');
     expect(p.root).toBe(beforeRoot);
   });
 
