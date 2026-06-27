@@ -65,3 +65,54 @@ describe('streaming table header — awaiting the delimiter row', () => {
     expect(doc2.children[0].children).toHaveLength(2); // header + 1 body row
   });
 });
+
+describe('streaming table header — projection-only correctness', () => {
+  it('reverts to a paragraph when no delimiter follows', () => {
+    const p = createPartialMarkdownParser();
+    p.push('| a | b |\n');
+    p.push('just text\n'); // not a delimiter → committed parser reverts
+    const b = blocks(p);
+    expect(b.some((x) => x.type === 'table')).toBe(false);
+    expect(b[0].type).toBe('paragraph');
+  });
+
+  it('finishing a lone header commits a paragraph, not a table', () => {
+    const p = createPartialMarkdownParser();
+    p.push('| a | b |'); // optimistic table on the open line…
+    p.finish(); // …but finish has no delimiter → CommonMark paragraph
+    expect(blocks(p)).toEqual([{ type: 'paragraph', status: 'complete' }]);
+  });
+
+  it('does not tableize a pipe line inside a fenced code block', () => {
+    const p = createPartialMarkdownParser();
+    p.push('```\n');
+    p.push('| a | b |'); // open line inside the code fence
+    expect(blocks(p)).toEqual([{ type: 'code-block', status: 'streaming' }]);
+  });
+
+  it('leaves the committed (newline-terminated) table output unchanged', () => {
+    const p = createPartialMarkdownParser();
+    p.push('| a | b |\n| - | - |\n| 1 | 2 |\n');
+    p.finish();
+    const doc = materialize(p.root) as any;
+    expect(doc.children).toHaveLength(1);
+    expect(doc.children[0].type).toBe('table');
+    expect(doc.children[0].status).toBe('complete');
+    expect(doc.children[0].children).toHaveLength(2); // header + 1 body row
+  });
+
+  // Pinning test (A): known, intentional projection artifact. While a header is
+  // buffered awaiting its delimiter, an open prose line (no trailing newline) is
+  // NOT shown — the projection keeps the header-only table because the line may
+  // still become a delimiter. It self-heals to paragraphs once the newline commits.
+  it('keeps showing the header table while an unterminated prose line streams (self-heals on newline)', () => {
+    const p = createPartialMarkdownParser();
+    p.push('| a | b |\n');
+    p.push('hello'); // prose on the open line, no newline yet
+    expect(blocks(p)).toEqual([{ type: 'table', status: 'streaming' }]); // open prose not yet projected
+    p.push('\n'); // newline commits → committed parser reverts the buffered header
+    const b = blocks(p);
+    expect(b.some((x) => x.type === 'table')).toBe(false); // reverted
+    expect(b.every((x) => x.type === 'paragraph')).toBe(true);
+  });
+});

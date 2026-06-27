@@ -492,6 +492,7 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
       // Fast path: nothing buffered AND no tablePending → the stable committed document.
       if (!committed || (!state.lineBuffer && state.tablePending === null)) return committed;
       // Open line present (or tablePending awaiting delimiter) → graft its parsed, streaming projection (B.2), once.
+      // In the tablePending window lineBuffer is empty, so buildStreamingRoot projects the buffered header itself.
       if (!openLineRoot) openLineRoot = buildStreamingRoot(committed);
       return openLineRoot;
     },

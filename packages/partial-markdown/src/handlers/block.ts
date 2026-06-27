@@ -73,6 +73,7 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
     // header-only table while we wait for the delimiter, instead of reverting it
     // to a paragraph. The committed path still reverts below (CommonMark-correct:
     // a lone `| a | b |` is a paragraph).
+    // The open line is intentionally not projected in this window — it may still be a delimiter.
     if (state.optimisticBlock) {
       const s2: InternalState = {
         ...state,
