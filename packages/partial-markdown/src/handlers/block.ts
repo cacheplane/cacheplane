@@ -69,6 +69,19 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
       s = commitTable(s, headerLine, alignments);
       return s;
     }
+    // Optimistic projection only: keep the buffered header visible as a streaming
+    // header-only table while we wait for the delimiter, instead of reverting it
+    // to a paragraph. The committed path still reverts below (CommonMark-correct:
+    // a lone `| a | b |` is a paragraph).
+    if (state.optimisticBlock) {
+      const s2: InternalState = {
+        ...state,
+        tablePending: null,
+        line: state.line + 1,
+        lineBuffer: '',
+      };
+      return commitOptimisticTableHeader(s2, state.tablePending.headerLine);
+    }
     // Revert: the buffered header was actually a paragraph.
     let s: InternalState = { ...state, tablePending: null };
     s = appendOrExtendParagraph(s, state.tablePending.headerLine);

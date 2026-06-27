@@ -38,3 +38,30 @@ describe('streaming table header — eager open-line projection', () => {
     expect(JSON.stringify(table)).toContain('Age');
   });
 });
+
+describe('streaming table header — awaiting the delimiter row', () => {
+  it('keeps the header visible as a table after its newline (no blank/double-paragraph)', () => {
+    const p = createPartialMarkdownParser();
+    p.push('| a | b |\n'); // header committed → tablePending set, lineBuffer empty
+    expect(blocks(p)).toEqual([{ type: 'table', status: 'streaming' }]);
+  });
+
+  it('keeps the header as a table while a partial delimiter streams', () => {
+    const p = createPartialMarkdownParser();
+    p.push('| a | b |\n');
+    p.push('| -'); // partial delimiter on the open line
+    expect(blocks(p)).toEqual([{ type: 'table', status: 'streaming' }]);
+  });
+
+  it('hands off to the real table when the delimiter row commits', () => {
+    const p = createPartialMarkdownParser();
+    p.push('| a | b |\n| --- | ---: |\n');
+    const doc = materialize(p.root) as any;
+    expect(doc.children).toHaveLength(1);
+    expect(doc.children[0].type).toBe('table');
+    // Body row streams into the committed table.
+    p.push('| 1 | 2 |\n');
+    const doc2 = materialize(p.root) as any;
+    expect(doc2.children[0].children).toHaveLength(2); // header + 1 body row
+  });
+});
