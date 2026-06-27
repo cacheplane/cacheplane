@@ -62,6 +62,7 @@ const CORPUS = [
   '> a quote\n> continued\n',
   '```ts\nconst x = 1;\n```\n',
   '| a | b |\n| - | - |\n| 1 | 2 |\n',
+  '| Name | Age |\n| :--- | ---: |\n| Ada | 36 |\n| Linus | 54 |\n',
   'Math $e^{i\\pi}+1=0$ and display $$a^2+b^2=c^2$$ done.\n',
   'Escapes: \\*not bold\\* and \\$5 and \\`code\\`.\n',
   'Mixed: **bold _both_ ~~strike~~** then `code` and $x$.\n',
