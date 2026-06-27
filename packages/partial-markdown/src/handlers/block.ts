@@ -178,9 +178,10 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
 
   // Optimistic projection only: an open line that reads as a table header in
   // progress renders immediately as a streaming header-only table (first closed
-  // cell), rather than buffering invisibly in tablePending. Gated to top-level
-  // block context (mode 'block', no enclosing list) so it can't spawn a second
-  // table inside an active one or hijack list continuation.
+  // cell), rather than buffering invisibly in tablePending. The mode==='block'
+  // guard (with the earlier mid-table-row branch) keeps it out of an active
+  // table, code fence, html-block and math-display; listStack.length===0 keeps
+  // it from hijacking list continuation.
   if (s.optimisticBlock && s.mode === 'block' && s.listStack.length === 0 && isTableHeaderInProgress(line)) {
     s = closeOpenParagraph(s);
     s = closeOpenList(s);

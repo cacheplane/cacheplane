@@ -116,3 +116,17 @@ describe('streaming table header — projection-only correctness', () => {
     expect(b.every((x) => x.type === 'paragraph')).toBe(true);
   });
 });
+
+describe('streaming table header — identity across growth', () => {
+  it('keeps the same table node id as columns and rows stream in', () => {
+    const p = createPartialMarkdownParser();
+    p.push('| a |'); // first closed cell → optimistic table
+    const id1 = (materialize(p.root) as any).children[0].id;
+    p.push(' b |'); // second column grows on the same open line
+    const id2 = (materialize(p.root) as any).children[0].id;
+    p.push('\n| - | - |\n'); // delimiter commits → real table
+    const id3 = (materialize(p.root) as any).children[0].id;
+    expect(id2).toBe(id1);
+    expect(id3).toBe(id1);
+  });
+});
