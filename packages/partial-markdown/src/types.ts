@@ -351,6 +351,13 @@ export interface InternalState extends StreamState {
    * leaves it falsy, so finished output stays CommonMark-correct.
    */
   optimisticInline?: boolean;
+  /**
+   * Projection-only flag. When set, `handleBlockLine` renders an in-progress
+   * table header as a streaming header-only table instead of buffering it
+   * invisibly in `tablePending`. Set only by `buildStreamingRoot`; never set on
+   * the committed parse path, so the committed document stays CommonMark-correct.
+   */
+  optimisticBlock?: boolean;
   /** When in math mode, which opener was used so we know how to close. */
   mathOpener: '$' | '$$' | '\\(' | '\\[' | null;
   /** Currently open math node id, if any. */

@@ -69,6 +69,20 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
       s = commitTable(s, headerLine, alignments);
       return s;
     }
+    // Optimistic projection only: keep the buffered header visible as a streaming
+    // header-only table while we wait for the delimiter, instead of reverting it
+    // to a paragraph. The committed path still reverts below (CommonMark-correct:
+    // a lone `| a | b |` is a paragraph).
+    // The open line is intentionally not projected in this window — it may still be a delimiter.
+    if (state.optimisticBlock) {
+      const s2: InternalState = {
+        ...state,
+        tablePending: null,
+        line: state.line + 1,
+        lineBuffer: '',
+      };
+      return commitOptimisticTableHeader(s2, state.tablePending.headerLine);
+    }
     // Revert: the buffered header was actually a paragraph.
     let s: InternalState = { ...state, tablePending: null };
     s = appendOrExtendParagraph(s, state.tablePending.headerLine);
@@ -160,6 +174,18 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
   // Mid-table body row: append to active table.
   if (s.mode === 'table' && TABLE_ROW_RE.test(line)) {
     return appendTableRow(s, line);
+  }
+
+  // Optimistic projection only: an open line that reads as a table header in
+  // progress renders immediately as a streaming header-only table (first closed
+  // cell), rather than buffering invisibly in tablePending. The mode==='block'
+  // guard (with the earlier mid-table-row branch) keeps it out of an active
+  // table, code fence, html-block and math-display; listStack.length===0 keeps
+  // it from hijacking list continuation.
+  if (s.optimisticBlock && s.mode === 'block' && s.listStack.length === 0 && isTableHeaderInProgress(line)) {
+    s = closeOpenParagraph(s);
+    s = closeOpenList(s);
+    return commitOptimisticTableHeader(s, line);
   }
 
   // Candidate table header: starts with `|`, contains `|`. Buffer for lookahead.
@@ -647,6 +673,29 @@ function openParagraphInside(state: InternalState, parentId: number, line: strin
 }
 
 // ── Tables ────────────────────────────────────────────────────────────────
+
+// Eager table-header detection for the streaming projection: a line that, after
+// up to three spaces of indent, starts with `|` and has at least one further `|`
+// (the first cell is closed). Looser than TABLE_ROW_RE (no trailing pipe needed)
+// but prefix-consistent with it, so the optimism never disagrees with what
+// eventually commits.
+const TABLE_HEADER_INPROGRESS_RE = /^\s{0,3}\|[^|]*\|/;
+
+function isTableHeaderInProgress(line: string): boolean {
+  return TABLE_HEADER_INPROGRESS_RE.test(line);
+}
+
+// Projection-only: render `headerLine` as a streaming header-only table with
+// default (null) alignments — one cell per `splitTableCells` token. Reuses the
+// committed-path builders so cell tokenization matches exactly.
+function commitOptimisticTableHeader(
+  state: InternalState,
+  headerLine: string,
+): InternalState {
+  const cellCount = splitTableCells(headerLine).length;
+  const alignments: Alignment[] = new Array(cellCount).fill(null);
+  return commitTable(state, headerLine, alignments);
+}
 
 function closeOpenTable(state: InternalState): InternalState {
   if (state.mode !== 'table') return state;

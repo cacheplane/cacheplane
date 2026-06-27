@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.2 — 2026-06-25
+
+### Added
+
+- **Streaming table headers.** A table header now renders as a growing,
+  header-only table the moment the first cell closes on the open line
+  (`| Name |` → a 1-row table; columns and cell text fill in as tokens arrive),
+  instead of blanking out and reappearing as raw pipe text before snapping into
+  a table. This closes the most visible remaining streaming artifact for
+  token-by-token (LLM) output. Projection-only: the committed parse is unchanged
+  and a header with no delimiter row still finishes as a CommonMark paragraph.
+
 ## 0.5.1 — 2026-06-24
 
 ### Added

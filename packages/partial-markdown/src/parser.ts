@@ -454,7 +454,7 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
   // mirror nodes so their identity is preserved across pushes.
   function buildStreamingRoot(committedDoc: MarkdownDocumentNode): MarkdownDocumentNode {
     const preview = handleBlockLine(
-      { ...state, lineBuffer: '', optimisticInline: true },
+      { ...state, lineBuffer: '', optimisticInline: true, optimisticBlock: true },
       state.lineBuffer,
     );
     if (preview.rootId === null) return committedDoc;
@@ -489,9 +489,10 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
     get root(): MarkdownDocumentNode | null {
       if (state.rootId === null) return null;
       const committed = (mirror.get(state.rootId) ?? null) as MarkdownDocumentNode | null;
-      // Fast path: nothing buffered → the stable committed document.
-      if (!committed || !state.lineBuffer) return committed;
-      // Open line present → graft its parsed, streaming projection (B.2), once.
+      // Fast path: nothing buffered AND no tablePending → the stable committed document.
+      if (!committed || (!state.lineBuffer && state.tablePending === null)) return committed;
+      // Open line present (or tablePending awaiting delimiter) → graft its parsed, streaming projection (B.2), once.
+      // In the tablePending window lineBuffer is empty, so buildStreamingRoot projects the buffered header itself.
       if (!openLineRoot) openLineRoot = buildStreamingRoot(committed);
       return openLineRoot;
     },
