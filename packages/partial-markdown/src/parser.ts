@@ -454,7 +454,7 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
   // mirror nodes so their identity is preserved across pushes.
   function buildStreamingRoot(committedDoc: MarkdownDocumentNode): MarkdownDocumentNode {
     const preview = handleBlockLine(
-      { ...state, lineBuffer: '', optimisticInline: true },
+      { ...state, lineBuffer: '', optimisticInline: true, optimisticBlock: true },
       state.lineBuffer,
     );
     if (preview.rootId === null) return committedDoc;

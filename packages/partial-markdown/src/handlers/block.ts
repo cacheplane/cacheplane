@@ -162,6 +162,17 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
     return appendTableRow(s, line);
   }
 
+  // Optimistic projection only: an open line that reads as a table header in
+  // progress renders immediately as a streaming header-only table (first closed
+  // cell), rather than buffering invisibly in tablePending. Gated to top-level
+  // block context (mode 'block', no enclosing list) so it can't spawn a second
+  // table inside an active one or hijack list continuation.
+  if (s.optimisticBlock && s.mode === 'block' && s.listStack.length === 0 && isTableHeaderInProgress(line)) {
+    s = closeOpenParagraph(s);
+    s = closeOpenList(s);
+    return commitOptimisticTableHeader(s, line);
+  }
+
   // Candidate table header: starts with `|`, contains `|`. Buffer for lookahead.
   if (TABLE_ROW_RE.test(line)) {
     s = closeOpenParagraph(s);
@@ -647,6 +658,29 @@ function openParagraphInside(state: InternalState, parentId: number, line: strin
 }
 
 // ── Tables ────────────────────────────────────────────────────────────────
+
+// Eager table-header detection for the streaming projection: a line that, after
+// up to three spaces of indent, starts with `|` and has at least one further `|`
+// (the first cell is closed). Looser than TABLE_ROW_RE (no trailing pipe needed)
+// but prefix-consistent with it, so the optimism never disagrees with what
+// eventually commits.
+const TABLE_HEADER_INPROGRESS_RE = /^\s{0,3}\|[^|]*\|/;
+
+function isTableHeaderInProgress(line: string): boolean {
+  return TABLE_HEADER_INPROGRESS_RE.test(line);
+}
+
+// Projection-only: render `headerLine` as a streaming header-only table with
+// default (null) alignments — one cell per `splitTableCells` token. Reuses the
+// committed-path builders so cell tokenization matches exactly.
+function commitOptimisticTableHeader(
+  state: InternalState,
+  headerLine: string,
+): InternalState {
+  const cellCount = splitTableCells(headerLine).length;
+  const alignments: Alignment[] = new Array(cellCount).fill(null);
+  return commitTable(state, headerLine, alignments);
+}
 
 function closeOpenTable(state: InternalState): InternalState {
   if (state.mode !== 'table') return state;
