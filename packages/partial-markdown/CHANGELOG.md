@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.4 — 2026-07-06
+
+### Changed
+
+- **Active table rows no longer require a trailing pipe.** Once a table is
+  established, a following leading-pipe row now remains part of that table even
+  if the row is finalized before a closing `|` arrives. This keeps paused or
+  finalized streams from ejecting an in-progress body row into a raw-pipe
+  paragraph below the table.
+
 ## 0.5.3 — 2026-07-05
 
 ### Added

@@ -198,6 +198,21 @@ describe('streaming table body rows — open-line projection', () => {
     expect(doc.children[0].children).toHaveLength(3); // header + 2 body rows
   });
 
+  it('keeps a finalized active row without a trailing pipe inside the table', () => {
+    const p = createPartialMarkdownParser();
+    p.push('| Name | Mental model | When to use |\n');
+    p.push('| --- | --- | --- |\n');
+    p.push('| Angular signals | Fine-grained values | Local state |\n');
+    p.push('| RxJS (Observables) [');
+    p.push('\n');
+    p.finish();
+    const doc = materialize(p.root) as any;
+    expect(doc.children).toHaveLength(1);
+    expect(doc.children[0].type).toBe('table');
+    expect(doc.children[0].children).toHaveLength(3); // header + 2 body rows
+    expect(JSON.stringify(doc)).toContain('RxJS (Observables) [');
+  });
+
   it('a blank open line still closes nothing prematurely (table stays, no extra row)', () => {
     const p = createPartialMarkdownParser();
     p.push(HEADER);

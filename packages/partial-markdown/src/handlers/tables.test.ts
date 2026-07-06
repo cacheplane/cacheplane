@@ -72,6 +72,17 @@ describe('handleBlockLine — table body rows', () => {
     expect(table.children.length).toBe(3); // header + 2 body rows
   });
 
+  it('keeps an active table row without a trailing pipe in the table', () => {
+    let s = freshDoc();
+    s = handleBlockLine(s, '| A | B | C |');
+    s = handleBlockLine(s, '| --- | --- | --- |');
+    s = handleBlockLine(s, '| Angular Signals | Fine-grained values | Local state |');
+    s = handleBlockLine(s, '| RxJS (Observables) [');
+    const table = s.nodes.find((n): n is TableAstNode => n.kind === 'table')!;
+    expect(table.children.length).toBe(3); // header + 2 body rows
+    expect(s.nodes.find(n => n.kind === 'paragraph')).toBeUndefined();
+  });
+
   it('pads short rows to header width', () => {
     let s = freshDoc();
     s = handleBlockLine(s, '| A | B | C |');

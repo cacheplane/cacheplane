@@ -103,7 +103,7 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
   }
 
   // Close open table if current line is not a table row.
-  if (s.mode === 'table' && !TABLE_ROW_RE.test(line)) {
+  if (s.mode === 'table' && !OPEN_TABLE_ROW_RE.test(line)) {
     s = closeOpenTable(s);
   }
 
@@ -181,7 +181,7 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
   }
 
   // Mid-table body row: append to active table.
-  if (s.mode === 'table' && TABLE_ROW_RE.test(line)) {
+  if (s.mode === 'table' && OPEN_TABLE_ROW_RE.test(line)) {
     return appendTableRow(s, line);
   }
 
