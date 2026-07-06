@@ -93,6 +93,15 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
 
   let s: InternalState = { ...state, line: state.line + 1, lineBuffer: '' };
 
+  // Optimistic projection only: while a table is active, an open line that
+  // begins a new row (leading pipe, row not yet complete) projects as an
+  // in-progress body row appended to the active table — instead of closing the
+  // table and rendering the partial row as a paragraph or a spurious second
+  // optimistic header table. A bare "|" projects as an empty in-progress row.
+  if (s.optimisticBlock && s.mode === 'table' && OPEN_TABLE_ROW_RE.test(line) && !TABLE_ROW_RE.test(line)) {
+    return appendTableRow(s, line);
+  }
+
   // Close open table if current line is not a table row.
   if (s.mode === 'table' && !TABLE_ROW_RE.test(line)) {
     s = closeOpenTable(s);
@@ -673,6 +682,11 @@ function openParagraphInside(state: InternalState, parentId: number, line: strin
 }
 
 // ── Tables ────────────────────────────────────────────────────────────────
+
+// A line that has STARTED a table row but not necessarily finished it: up to
+// three spaces of indent then a leading pipe. Prefix-consistent with
+// TABLE_ROW_RE (which additionally requires the trailing pipe).
+const OPEN_TABLE_ROW_RE = /^\s{0,3}\|/;
 
 // Eager table-header detection for the streaming projection: a line that, after
 // up to three spaces of indent, starts with `|` and has at least one further `|`
