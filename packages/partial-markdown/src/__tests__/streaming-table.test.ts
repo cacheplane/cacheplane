@@ -130,3 +130,80 @@ describe('streaming table header — identity across growth', () => {
     expect(id3).toBe(id1);
   });
 });
+
+describe('streaming table body rows — open-line projection', () => {
+  // Committed header + delimiter, so the table is active (mode 'table').
+  const HEADER = '| A | B |\n| - | - |\n';
+
+  it('projects a bare "|" as an empty in-progress row (no paragraph)', () => {
+    const p = createPartialMarkdownParser();
+    p.push(HEADER);
+    p.push('|');
+    expect(blocks(p)).toEqual([{ type: 'table', status: 'streaming' }]);
+    const doc = materialize(p.root) as any;
+    expect(doc.children[0].children).toHaveLength(2); // header + empty in-progress row
+  });
+
+  it('projects a partial row into the SAME table (no spurious second table)', () => {
+    const p = createPartialMarkdownParser();
+    p.push(HEADER);
+    p.push('| x1 | y'); // two pipes, no trailing pipe — used to spawn a 2nd optimistic table
+    expect(blocks(p)).toEqual([{ type: 'table', status: 'streaming' }]);
+    const doc = materialize(p.root) as any;
+    const rows = doc.children[0].children;
+    expect(rows).toHaveLength(2); // header + in-progress body row
+    const lastRow = JSON.stringify(rows[1]);
+    expect(lastRow).toContain('x1');
+    expect(lastRow).toContain('y');
+  });
+
+  it('grows the in-progress row cell-by-cell, padded to header width', () => {
+    const p = createPartialMarkdownParser();
+    p.push(HEADER);
+    p.push('| x1');
+    let doc = materialize(p.root) as any;
+    expect(doc.children).toHaveLength(1);
+    expect(doc.children[0].children[1].children).toHaveLength(2); // padded to 2 cols
+    p.push(' | y1');
+    doc = materialize(p.root) as any;
+    expect(JSON.stringify(doc.children[0].children[1])).toContain('y1');
+  });
+
+  it('projects an indented partial row (matches TABLE_ROW_RE indent handling)', () => {
+    const p = createPartialMarkdownParser();
+    p.push('| A | B |\n| - | - |\n');
+    p.push('    | x1 | y'); // 4-space indent — committed grammar accepts this row
+    expect(blocks(p)).toEqual([{ type: 'table', status: 'streaming' }]);
+    const doc = materialize(p.root) as any;
+    expect(doc.children[0].children).toHaveLength(2); // header + in-progress row
+  });
+
+  it('still appends a COMPLETE open-line row (regression guard)', () => {
+    const p = createPartialMarkdownParser();
+    p.push(HEADER);
+    p.push('| x1 | y1 |'); // trailing pipe — pre-existing mid-table branch
+    const doc = materialize(p.root) as any;
+    expect(doc.children).toHaveLength(1);
+    expect(doc.children[0].children).toHaveLength(2);
+  });
+
+  it('leaves the committed parse unchanged (newline-terminated + finish)', () => {
+    const p = createPartialMarkdownParser();
+    p.push('| A | B |\n| - | - |\n| x1 | y1 |\n| x2 | y2 |\n');
+    p.finish();
+    const doc = materialize(p.root) as any;
+    expect(doc.children).toHaveLength(1);
+    expect(doc.children[0].type).toBe('table');
+    expect(doc.children[0].status).toBe('complete');
+    expect(doc.children[0].children).toHaveLength(3); // header + 2 body rows
+  });
+
+  it('a blank open line still closes nothing prematurely (table stays, no extra row)', () => {
+    const p = createPartialMarkdownParser();
+    p.push(HEADER);
+    // No open line at all: committed table only.
+    expect(blocks(p)).toEqual([{ type: 'table', status: 'streaming' }]);
+    const doc = materialize(p.root) as any;
+    expect(doc.children[0].children).toHaveLength(1); // header only
+  });
+});

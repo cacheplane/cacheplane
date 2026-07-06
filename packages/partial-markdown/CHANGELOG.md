@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.3 — 2026-07-05
+
+### Added
+
+- **Streaming table body rows.** While a table is active, an in-progress body
+  row on the open line now renders as a streaming row inside the table —
+  growing cell-by-cell, padded to header width — instead of momentarily
+  closing the table and flashing as a raw-pipe paragraph (bare `|` / one pipe)
+  or a spurious second header-only table (two+ pipes). A bare `|` projects as
+  an empty in-progress row. Projection-only: the committed parse is unchanged.
+  Completes the streaming-table work begun in 0.5.2.
+
 ## 0.5.2 — 2026-06-25
 
 ### Added
