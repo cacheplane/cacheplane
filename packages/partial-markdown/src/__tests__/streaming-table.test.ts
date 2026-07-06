@@ -169,6 +169,15 @@ describe('streaming table body rows — open-line projection', () => {
     expect(JSON.stringify(doc.children[0].children[1])).toContain('y1');
   });
 
+  it('projects an indented partial row (matches TABLE_ROW_RE indent handling)', () => {
+    const p = createPartialMarkdownParser();
+    p.push('| A | B |\n| - | - |\n');
+    p.push('    | x1 | y'); // 4-space indent — committed grammar accepts this row
+    expect(blocks(p)).toEqual([{ type: 'table', status: 'streaming' }]);
+    const doc = materialize(p.root) as any;
+    expect(doc.children[0].children).toHaveLength(2); // header + in-progress row
+  });
+
   it('still appends a COMPLETE open-line row (regression guard)', () => {
     const p = createPartialMarkdownParser();
     p.push(HEADER);

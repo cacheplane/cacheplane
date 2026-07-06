@@ -683,10 +683,11 @@ function openParagraphInside(state: InternalState, parentId: number, line: strin
 
 // ── Tables ────────────────────────────────────────────────────────────────
 
-// A line that has STARTED a table row but not necessarily finished it: up to
-// three spaces of indent then a leading pipe. Prefix-consistent with
-// TABLE_ROW_RE (which additionally requires the trailing pipe).
-const OPEN_TABLE_ROW_RE = /^\s{0,3}\|/;
+// A line that has STARTED a table row but not necessarily finished it. Matches
+// TABLE_ROW_RE's indent handling exactly (leading `\s*` then a pipe), differing
+// only in not requiring the trailing pipe. Only consulted while mode==='table',
+// where the committed grammar already accepts indented rows.
+const OPEN_TABLE_ROW_RE = /^\s*\|/;
 
 // Eager table-header detection for the streaming projection: a line that, after
 // up to three spaces of indent, starts with `|` and has at least one further `|`
