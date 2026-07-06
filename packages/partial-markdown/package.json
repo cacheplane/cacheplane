@@ -1,6 +1,6 @@
 {
   "name": "@cacheplane/partial-markdown",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "Streaming partial-Markdown parser with identity preservation, push/pull APIs, JSON Pointer lookups, and structural-sharing materialization.",
   "type": "module",
   "main": "./dist/index.cjs",
