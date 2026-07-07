@@ -420,14 +420,21 @@ export function appendOrExtendParagraph(state: InternalState, line: string): Int
 }
 
 function openParagraph(state: InternalState, line: string): InternalState {
-  const docId = state.rootId!;
+  const parentId = currentParagraphParentId(state);
   const [s1, paraId] = allocId(state);
   const para: ParagraphAstNode = {
-    id: paraId, kind: 'paragraph', parentId: docId, status: 'streaming', children: [],
+    id: paraId, kind: 'paragraph', parentId, status: 'streaming', children: [],
   };
-  let s = appendChild(appendNode(s1, para), docId, paraId);
+  let s = appendChild(appendNode(s1, para), parentId, paraId);
   s = parseInline(s, paraId, line);
   return { ...s, currentNodeId: paraId };
+}
+
+function currentParagraphParentId(state: InternalState): number {
+  const topId = state.stack[state.stack.length - 1];
+  const top = topId != null ? state.nodes[topId] : undefined;
+  if (top && top.kind === 'blockquote') return topId;
+  return state.rootId!;
 }
 
 function appendLineToParagraph(state: InternalState, paraId: number, line: string): InternalState {

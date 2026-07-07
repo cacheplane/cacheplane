@@ -35,6 +35,18 @@ describe('B.2 — streaming open-line rendering', () => {
     expect(JSON.stringify(doc.children[0])).toContain('line two');
   });
 
+  it('open blockquote line continues inside the blockquote', () => {
+    const p = createPartialMarkdownParser();
+    p.push('> hello\n');
+    p.push('> wor');
+    const doc = materialize(p.root) as any;
+    expect(doc.children).toHaveLength(1);
+    expect(doc.children[0].type).toBe('blockquote');
+    expect(doc.children[0].children[0].type).toBe('paragraph');
+    const paragraph = doc.children[0].children[0];
+    expect(paragraph.children.map((node: any) => node.text ?? '\n').join('')).toBe('hello\nwor');
+  });
+
   it('open line after a blank line starts a NEW streaming block', () => {
     const p = createPartialMarkdownParser();
     p.push('First.\n\n');     // First. committed + closed (blank line)

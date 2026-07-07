@@ -193,11 +193,7 @@ describe('Math in non-paragraph inline contexts', () => {
     expect(math).toBeDefined();
   });
 
-  // KNOWN GAP: blockquote children are empty in the current implementation —
-  // inline content inside a blockquote is promoted to a root-level sibling
-  // paragraph rather than nested inside the blockquote node. Skipped until
-  // blockquote nesting is implemented.
-  it.skip('math inside blockquote', () => {
+  it('math inside blockquote', () => {
     const p = createPartialMarkdownParser();
     p.push('> Solve $x^2 = 4$.\n');
     p.finish();
