@@ -15,6 +15,7 @@ export function createInternal(options?: PartialMarkdownParserOptions): Internal
     line: 1,
     column: 1,
     lineBuffer: '',
+    codeFenceMarker: null,
     textBuffer: '',
     currentNodeId: null,
     options: {
