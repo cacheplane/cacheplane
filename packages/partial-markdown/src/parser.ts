@@ -461,7 +461,7 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
     const prevDoc = preview.nodes[preview.rootId] as any;
     const childIds: number[] = prevDoc?.children ?? [];
     const children: MarkdownNode[] = childIds.map((cid, i) => {
-      if (preview.nodes[cid] === state.nodes[cid] && mirror.has(cid)) {
+      if (isUnchangedPreviewSubtree(cid, preview.nodes) && mirror.has(cid)) {
         return mirror.get(cid)!; // unchanged committed block — reuse (identity)
       }
       const node = astToStreamingNode(cid, preview.nodes);
@@ -469,6 +469,15 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
       return node;
     });
     return { ...(committedDoc as any), children } as MarkdownDocumentNode;
+  }
+
+  function isUnchangedPreviewSubtree(id: number, previewNodes: readonly (AstNode | undefined)[]): boolean {
+    const previewNode = previewNodes[id];
+    if (!previewNode || previewNode !== state.nodes[id]) return false;
+
+    const children = (previewNode as any).children;
+    if (!Array.isArray(children)) return true;
+    return children.every((childId: number) => isUnchangedPreviewSubtree(childId, previewNodes));
   }
 
   // Memoized streaming projection — rebuilt once per push, so repeated `root` /

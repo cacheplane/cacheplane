@@ -173,12 +173,28 @@ describe('handleBlockLine — blockquote', () => {
     expect(bq).toBeDefined();
   });
 
+  it('attaches quoted paragraph content to the blockquote', () => {
+    let s = freshState();
+    s = handleBlockLine(s, '> hello');
+    const doc = s.nodes[s.rootId!] as DocumentAstNode;
+    const bq = s.nodes[doc.children[0]!] as any;
+    expect(bq.kind).toBe('blockquote');
+    expect(bq.children).toHaveLength(1);
+    expect(s.nodes[bq.children[0]!]?.kind).toBe('paragraph');
+  });
+
   it('extends an open blockquote with another "> line"', () => {
     let s = freshState();
     s = handleBlockLine(s, '> first');
     s = handleBlockLine(s, '> second');
     const bqs = s.nodes.filter(n => n.kind === 'blockquote');
     expect(bqs).toHaveLength(1);
+    const para = s.nodes[(bqs[0] as any).children[0]!] as any;
+    expect(para.children.map((id: number) => s.nodes[id]?.kind)).toEqual([
+      'text',
+      'soft-break',
+      'text',
+    ]);
   });
 
   it('a blank line closes the blockquote', () => {

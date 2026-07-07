@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.6 — 2026-07-07
+
+### Fixed
+
+- **Closing code fences no longer flash inside streaming code blocks.** Partial
+  closer prefixes such as `` ` `` and `` `` `` are suppressed during optimistic
+  projection, and active fenced code blocks now track their opener marker
+  separately from the pending line buffer.
+- **Tilde fenced blocks keep backtick-only lines as code content.** Fence closer
+  matching now uses the remembered opener marker instead of the current line.
+
+## 0.5.5 — 2026-07-07
+
+### Fixed
+
+- **Blockquote content now stays nested in the blockquote.** Streaming quoted
+  paragraphs no longer materialize as an empty blockquote followed by a sibling
+  paragraph.
+- **Nested open-line projection now updates changed descendants.** Open lines
+  inside blockquotes are projected into the nested paragraph instead of reusing
+  a stale top-level container snapshot.
+
 ## 0.5.4 — 2026-07-06
 
 ### Changed
