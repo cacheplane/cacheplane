@@ -266,18 +266,28 @@ function openFencedCodeBlock(
     mode: 'code-fence',
     stack: [...s.stack, id],
     currentNodeId: id,
-    lineBuffer: fenceChar,
+    codeFenceMarker: fenceChar,
   };
 }
 
 function handleCodeFenceLine(state: InternalState, line: string): InternalState {
-  const fenceChar = state.lineBuffer;
+  const fenceChar = state.codeFenceMarker;
   const id = state.currentNodeId;
-  if (id == null) return { ...state, mode: 'block', lineBuffer: '' };
+  if (id == null || fenceChar == null) {
+    return { ...state, mode: 'block', lineBuffer: '', codeFenceMarker: null };
+  }
   const trimmed = line.trim();
   const isCloser =
     (fenceChar === '```' && /^`{3,}\s*$/.test(trimmed)) ||
     (fenceChar === '~~~' && /^~{3,}\s*$/.test(trimmed));
+  const isPartialCloser =
+    state.optimisticBlock === true &&
+    (
+      (fenceChar === '```' && /^`{1,2}\s*$/.test(trimmed)) ||
+      (fenceChar === '~~~' && /^~{1,2}\s*$/.test(trimmed))
+    );
+
+  if (isPartialCloser) return state;
 
   if (isCloser) {
     let s = setStatus(state, id, 'complete');
@@ -286,6 +296,7 @@ function handleCodeFenceLine(state: InternalState, line: string): InternalState 
       mode: 'block',
       stack: s.stack.slice(0, -1),
       currentNodeId: null,
+      codeFenceMarker: null,
       lineBuffer: '',
       line: state.line + 1,
     };

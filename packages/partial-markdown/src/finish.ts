@@ -183,5 +183,5 @@ export function finishInternal(state: InternalState): InternalState {
     }
   }
 
-  return { ...s, complete: true, mode: 'done', stack: [] };
+  return { ...s, complete: true, mode: 'done', stack: [], codeFenceMarker: null };
 }

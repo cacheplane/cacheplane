@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import { describe, it, expect } from 'vitest';
-import { create, push, finish, resolve } from '../index';
+import { create, push, finish, resolve, createPartialMarkdownParser } from '../index';
 
 const corpus: { name: string; source: string; assertSnapshot: (root: any) => void }[] = [
   {
@@ -76,4 +76,34 @@ describe('streaming integration corpus', () => {
       sample.assertSnapshot(root);
     });
   }
+});
+
+describe('streaming fenced code projection', () => {
+  it('does not expose a closing backtick fence while the closer is still streaming', () => {
+    const parser = createPartialMarkdownParser();
+    parser.push('```ts\nconst x = 1;\n');
+
+    for (const chunk of ['`', '`', '`']) {
+      parser.push(chunk);
+      const codeBlock = parser.root?.children[0];
+      expect(codeBlock?.type).toBe('code-block');
+      if (codeBlock?.type === 'code-block') {
+        expect(codeBlock.text).toBe('const x = 1;');
+      }
+    }
+  });
+
+  it('keeps backtick lines inside a tilde fenced code block', () => {
+    let state = create();
+    state = push(state, '~~~ts\nconst x = 1;\n```\n~~~\n');
+    state = finish(state);
+
+    const root = resolve(state);
+    const codeBlock = root.children[0];
+    expect(codeBlock?.type).toBe('code-block');
+    if (codeBlock?.type === 'code-block') {
+      expect(codeBlock.text).toBe('const x = 1;\n```');
+      expect(codeBlock.status).toBe('complete');
+    }
+  });
 });

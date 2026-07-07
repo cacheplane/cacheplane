@@ -338,6 +338,8 @@ export interface InternalState extends StreamState {
   column: number;
   /** Buffer for the current line being parsed (block-level). */
   lineBuffer: string;
+  /** Fence marker for the currently open fenced code block, if any. */
+  codeFenceMarker: '```' | '~~~' | null;
   /** Inline-level buffer for the currently-streaming text node. */
   textBuffer: string;
   /** Active node id at the deepest level of the parser, if any. */
