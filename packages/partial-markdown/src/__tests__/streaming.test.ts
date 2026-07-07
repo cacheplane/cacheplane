@@ -41,6 +41,13 @@ const corpus: { name: string; source: string; assertSnapshot: (root: any) => voi
     source: '> hello\n> world\n\n',
     assertSnapshot(root) {
       expect(root.children[0].type).toBe('blockquote');
+      expect(root.children).toHaveLength(1);
+      expect(root.children[0].children[0].type).toBe('paragraph');
+      expect(
+        root.children[0].children[0].children
+          .map((child: any) => child.text ?? '\n')
+          .join(''),
+      ).toBe('hello\nworld');
     },
   },
   {

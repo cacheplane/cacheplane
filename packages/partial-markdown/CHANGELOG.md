@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.5 — 2026-07-07
+
+### Fixed
+
+- **Blockquote content now stays nested in the blockquote.** Streaming quoted
+  paragraphs no longer materialize as an empty blockquote followed by a sibling
+  paragraph.
+- **Nested open-line projection now updates changed descendants.** Open lines
+  inside blockquotes are projected into the nested paragraph instead of reusing
+  a stale top-level container snapshot.
+
 ## 0.5.4 — 2026-07-06
 
 ### Changed
