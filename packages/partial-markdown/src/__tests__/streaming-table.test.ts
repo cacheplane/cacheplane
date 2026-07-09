@@ -222,3 +222,48 @@ describe('streaming table body rows — open-line projection', () => {
     expect(doc.children[0].children).toHaveLength(1); // header only
   });
 });
+
+describe('streaming tables inside blockquotes', () => {
+  it('commits a quoted table inside the blockquote', () => {
+    const p = createPartialMarkdownParser();
+    p.push('> | A | B |\n> | --- | --- |\n> | 1 | 2 |\n');
+    p.finish();
+
+    const doc = materialize(p.root) as any;
+    expect(doc.children).toHaveLength(1);
+    const blockquote = doc.children[0];
+    expect(blockquote.type).toBe('blockquote');
+    expect(blockquote.children).toHaveLength(1);
+    const table = blockquote.children[0];
+    expect(table.type).toBe('table');
+    expect(table.children).toHaveLength(2); // header + body row
+    expect(JSON.stringify(table)).toContain('A');
+    expect(JSON.stringify(table)).toContain('1');
+  });
+
+  it('projects a partial quoted body row into the same nested table', () => {
+    const p = createPartialMarkdownParser();
+    p.push('> | A | B |\n> | --- | --- |\n');
+    p.push('> | 1');
+
+    const doc = materialize(p.root) as any;
+    expect(doc.children).toHaveLength(1);
+    const blockquote = doc.children[0];
+    expect(blockquote.type).toBe('blockquote');
+    const table = blockquote.children[0];
+    expect(table.type).toBe('table');
+    expect(table.children).toHaveLength(2); // header + in-progress body row
+    expect(JSON.stringify(table.children[1])).toContain('1');
+  });
+
+  it('keeps a following root table outside the blockquote', () => {
+    const p = createPartialMarkdownParser();
+    p.push('> quote\n\n| A | B |\n| --- | --- |\n');
+    p.finish();
+
+    const doc = materialize(p.root) as any;
+    expect(doc.children).toHaveLength(2);
+    expect(doc.children[0].type).toBe('blockquote');
+    expect(doc.children[1].type).toBe('table');
+  });
+});
