@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.7 — 2026-07-09
+
+### Fixed
+
+- **Tables now parse inside blockquotes.** Quoted markdown tables such as
+  `> | A | B |` followed by a quoted alignment row now commit as table
+  children inside the blockquote instead of falling back to paragraph text.
+- **Streaming quoted table rows stay nested.** Partial body rows streaming
+  inside a blockquote project into the existing nested table, preserving the
+  same table-row behavior available at the document root.
+
 ## 0.5.6 — 2026-07-07
 
 ### Fixed
