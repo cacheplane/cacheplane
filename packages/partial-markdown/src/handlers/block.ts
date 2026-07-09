@@ -51,10 +51,36 @@ import {
 import { detectHtmlBlockEnd, detectHtmlBlockStart } from './html';
 
 export function handleBlockLine(state: InternalState, line: string): InternalState {
+  return handleBlockLineInternal(state, line);
+}
+
+function handleBlockLineInternal(
+  state: InternalState,
+  line: string,
+  options: { advanceLine?: boolean; preserveBlockquote?: boolean } = {},
+): InternalState {
+  const advanceLine = options.advanceLine ?? true;
+  const preserveBlockquote = options.preserveBlockquote ?? false;
   if (state.mode === 'code-fence') return handleCodeFenceLine(state, line);
   if (state.mode === 'html-block') return appendHtmlBlockLine({ ...state, lineBuffer: '' }, line);
   if (state.mode === 'math-display') {
     return appendMathDisplayLine({ ...state, lineBuffer: '' }, line);
+  }
+
+  const blockquoteContinuation = BLOCKQUOTE_PREFIX_RE.exec(line);
+  if (blockquoteContinuation && isBlockquoteOpen(state)) {
+    const innerLine = line.replace(BLOCKQUOTE_PREFIX_RE, '');
+    if (shouldParseBlockquoteInnerLineAsTable(state, innerLine)) {
+      const s: InternalState = {
+        ...state,
+        line: advanceLine ? state.line + 1 : state.line,
+        lineBuffer: '',
+      };
+      return handleBlockLineInternal(s, innerLine, {
+        advanceLine: false,
+        preserveBlockquote: true,
+      });
+    }
   }
 
   // If we have a pending table-header candidate, this line decides:
@@ -65,7 +91,12 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
     if (TABLE_ALIGNMENT_RE.test(trimmed)) {
       const alignments = parseAlignmentRow(trimmed)!;
       const headerLine = state.tablePending.headerLine;
-      let s: InternalState = { ...state, tablePending: null, line: state.line + 1, lineBuffer: '' };
+      let s: InternalState = {
+        ...state,
+        tablePending: null,
+        line: advanceLine ? state.line + 1 : state.line,
+        lineBuffer: '',
+      };
       s = commitTable(s, headerLine, alignments);
       return s;
     }
@@ -78,7 +109,7 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
       const s2: InternalState = {
         ...state,
         tablePending: null,
-        line: state.line + 1,
+        line: advanceLine ? state.line + 1 : state.line,
         lineBuffer: '',
       };
       return commitOptimisticTableHeader(s2, state.tablePending.headerLine);
@@ -86,12 +117,16 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
     // Revert: the buffered header was actually a paragraph.
     let s: InternalState = { ...state, tablePending: null };
     s = appendOrExtendParagraph(s, state.tablePending.headerLine);
-    s = closeOpenParagraph(s);
+    s = closeOpenParagraph(s, { closeBlockquote: !preserveBlockquote });
     // Fall through to process the current line normally (reassign state).
     state = s;
   }
 
-  let s: InternalState = { ...state, line: state.line + 1, lineBuffer: '' };
+  let s: InternalState = {
+    ...state,
+    line: advanceLine ? state.line + 1 : state.line,
+    lineBuffer: '',
+  };
 
   // Optimistic projection only: while a table is active, an open line that
   // begins a new row (leading pipe, row not yet complete) projects as an
@@ -109,21 +144,21 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
 
   // Blank line: close any open paragraph/list (and its enclosing blockquote).
   if (line.length === 0) {
-    let blankState = closeOpenParagraph(s);
+    let blankState = closeOpenParagraph(s, { closeBlockquote: !preserveBlockquote });
     blankState = closeOpenList(blankState);
     return blankState;
   }
 
   // Block-level recognizers (each closes any open paragraph first).
   if (THEMATIC_BREAK_RE.test(line)) {
-    s = closeOpenParagraph(s);
+    s = closeOpenParagraph(s, { closeBlockquote: !preserveBlockquote });
     s = closeOpenList(s);
     return appendThematicBreak(s);
   }
 
   const atx = ATX_HEADING_RE.exec(line);
   if (atx) {
-    s = closeOpenParagraph(s);
+    s = closeOpenParagraph(s, { closeBlockquote: !preserveBlockquote });
     s = closeOpenList(s);
     const level = (atx[1]?.length ?? 1) as 1 | 2 | 3 | 4 | 5 | 6;
     const content = atx[2] ?? '';
@@ -132,21 +167,21 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
 
   const fence = FENCE_OPEN_RE.exec(line);
   if (fence) {
-    s = closeOpenParagraph(s);
+    s = closeOpenParagraph(s, { closeBlockquote: !preserveBlockquote });
     s = closeOpenList(s);
     return openFencedCodeBlock(s, fence[1] as '```' | '~~~', fence[2] ?? '');
   }
 
   const htmlKind = detectHtmlBlockStart(line, !isParagraphOpen(s));
   if (htmlKind !== null) {
-    s = closeOpenParagraph(s);
+    s = closeOpenParagraph(s, { closeBlockquote: !preserveBlockquote });
     s = closeOpenList(s);
     return openHtmlBlock(s, line, htmlKind);
   }
 
   const displayMath = displayMathOpener(line, s.options.math);
   if (displayMath) {
-    s = closeOpenParagraph(s);
+    s = closeOpenParagraph(s, { closeBlockquote: !preserveBlockquote });
     s = closeOpenList(s);
     return openDisplayMath(s, line, displayMath.start, displayMath.kind);
   }
@@ -164,7 +199,7 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
   // Citation definition: lifts to citationDefs sidecar (no block-tree node).
   const citeDef = CITATION_DEF_RE.exec(line);
   if (citeDef) {
-    s = closeOpenParagraph(s);
+    s = closeOpenParagraph(s, { closeBlockquote: !preserveBlockquote });
     s = closeOpenList(s);
     return liftCitationDef(s, citeDef[1]!, citeDef[2] ?? '');
   }
@@ -172,7 +207,7 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
   // Link reference definition: lifts to linkDefs sidecar (no block-tree node).
   const linkDef = LINK_DEF_RE.exec(line);
   if (linkDef) {
-    s = closeOpenParagraph(s);
+    s = closeOpenParagraph(s, { closeBlockquote: !preserveBlockquote });
     s = closeOpenList(s);
     const label = linkDef[1]!;
     const url = linkDef[2] ?? linkDef[3] ?? '';
@@ -192,14 +227,14 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
   // table, code fence, html-block and math-display; listStack.length===0 keeps
   // it from hijacking list continuation.
   if (s.optimisticBlock && s.mode === 'block' && s.listStack.length === 0 && isTableHeaderInProgress(line)) {
-    s = closeOpenParagraph(s);
+    s = closeOpenParagraph(s, { closeBlockquote: !preserveBlockquote });
     s = closeOpenList(s);
     return commitOptimisticTableHeader(s, line);
   }
 
   // Candidate table header: starts with `|`, contains `|`. Buffer for lookahead.
   if (TABLE_ROW_RE.test(line)) {
-    s = closeOpenParagraph(s);
+    s = closeOpenParagraph(s, { closeBlockquote: !preserveBlockquote });
     s = closeOpenList(s);
     return { ...s, tablePending: { headerLine: line, paragraphId: null } };
   }
@@ -215,7 +250,7 @@ export function handleBlockLine(state: InternalState, line: string): InternalSta
       }
     }
     // Not enough indent to continue — close lists and fall through.
-    s = closeOpenParagraph(s);
+    s = closeOpenParagraph(s, { closeBlockquote: !preserveBlockquote });
     s = closeOpenList(s);
     return appendOrExtendParagraph(s, line);
   }
@@ -446,7 +481,11 @@ function appendLineToParagraph(state: InternalState, paraId: number, line: strin
   return parseInline(s, paraId, line);
 }
 
-export function closeOpenParagraph(state: InternalState): InternalState {
+export function closeOpenParagraph(
+  state: InternalState,
+  options: { closeBlockquote?: boolean } = {},
+): InternalState {
+  const closeBlockquote = options.closeBlockquote ?? true;
   let s = state;
   const cur = state.currentNodeId != null ? state.nodes[state.currentNodeId] : undefined;
   if (cur && cur.kind === 'paragraph') {
@@ -461,7 +500,7 @@ export function closeOpenParagraph(state: InternalState): InternalState {
   // If a blockquote is open at the top of the stack, close it as well.
   const topId = s.stack[s.stack.length - 1];
   const top = topId != null ? s.nodes[topId] : undefined;
-  if (top && top.kind === 'blockquote' && topId != null) {
+  if (closeBlockquote && top && top.kind === 'blockquote' && topId != null) {
     s = setStatus(s, topId, 'complete');
     s = { ...s, stack: s.stack.slice(0, -1) };
   }
@@ -474,6 +513,12 @@ function openOrExtendBlockquote(state: InternalState, innerLine: string): Intern
   const topId = state.stack[state.stack.length - 1];
   const top = topId != null ? state.nodes[topId] : undefined;
   if (top && top.kind === 'blockquote' && top.status === 'streaming') {
+    if (shouldParseBlockquoteInnerLineAsTable(state, innerLine)) {
+      return handleBlockLineInternal(state, innerLine, {
+        advanceLine: false,
+        preserveBlockquote: true,
+      });
+    }
     return appendOrExtendParagraph(state, innerLine);
   }
   // Open a new blockquote.
@@ -484,7 +529,27 @@ function openOrExtendBlockquote(state: InternalState, innerLine: string): Intern
   };
   let s = appendChild(appendNode(s1, bq), docId, bqId);
   s = { ...s, stack: [...s.stack, bqId] };
+  if (shouldParseBlockquoteInnerLineAsTable(s, innerLine)) {
+    return handleBlockLineInternal(s, innerLine, {
+      advanceLine: false,
+      preserveBlockquote: true,
+    });
+  }
   return appendOrExtendParagraph(s, innerLine);
+}
+
+function isBlockquoteOpen(state: InternalState): boolean {
+  const topId = state.stack[state.stack.length - 1];
+  const top = topId != null ? state.nodes[topId] : undefined;
+  return top?.kind === 'blockquote' && top.status === 'streaming';
+}
+
+function shouldParseBlockquoteInnerLineAsTable(state: InternalState, innerLine: string): boolean {
+  return state.tablePending !== null ||
+    state.mode === 'table' ||
+    OPEN_TABLE_ROW_RE.test(innerLine) ||
+    isTableHeaderInProgress(innerLine) ||
+    TABLE_ROW_RE.test(innerLine);
 }
 
 // ── Lists ─────────────────────────────────────────────────────────────────
@@ -743,20 +808,27 @@ function commitTable(
   headerLine: string,
   alignments: ReadonlyArray<Alignment>,
 ): InternalState {
-  const docId = state.rootId!;
+  const parentId = currentTableParentId(state);
   const [s1, tableId] = allocId(state);
   const table: TableAstNode = {
     id: tableId,
     kind: 'table',
-    parentId: docId,
+    parentId,
     status: 'streaming',
     alignments,
     children: [],
   };
   let s = appendNode(s1, table);
-  s = appendChild(s, docId, tableId);
+  s = appendChild(s, parentId, tableId);
   s = appendTableRow({ ...s, mode: 'table', currentNodeId: tableId }, headerLine, true);
   return s;
+}
+
+function currentTableParentId(state: InternalState): number {
+  const topId = state.stack[state.stack.length - 1];
+  const top = topId != null ? state.nodes[topId] : undefined;
+  if (top?.kind === 'blockquote') return topId!;
+  return state.rootId!;
 }
 
 function appendTableRow(

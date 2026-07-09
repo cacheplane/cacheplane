@@ -88,14 +88,7 @@ describe('Integration — citations + tables + task lists end-to-end', () => {
     expect(types1).toContain('inline-code');
   });
 
-  it.skip('table nested in blockquote', () => {
-    // Known limitation: openOrExtendBlockquote strips the "> " prefix and
-    // calls handleBlockLine on the inner content line-by-line, but the
-    // table lookahead (tablePending) state is held on the top-level parser
-    // state and is not threaded through the blockquote sub-parse. As a
-    // result, `> | A | B |` followed by `> | --- | --- |` does not commit
-    // a table inside the blockquote — the header line becomes a paragraph.
-    // Revisit in 0.3 when blockquote re-parsing is unified.
+  it('table nested in blockquote', () => {
     const p = createPartialMarkdownParser();
     p.push('> | A | B |\n> | --- | --- |\n> | 1 | 2 |\n');
     p.finish();
