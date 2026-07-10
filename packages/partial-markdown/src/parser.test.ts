@@ -107,6 +107,32 @@ describe('createPartialMarkdownParser', () => {
     expect(codeBlock.type).toBe('code-block');
     expect(codeBlock.language).toBe('ts');
   });
+
+  it('does not emit synthetic text events for fenced code content or partial closers', () => {
+    const p = createPartialMarkdownParser();
+    p.push('```ts\nconst x = 1;\n');
+
+    const contentEvents = p.push('const y = 2;');
+    expect(contentEvents).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          node: expect.objectContaining({ id: -1 }),
+        }),
+      ]),
+    );
+    p.push('\n');
+
+    for (const chunk of ['`', '`', '`']) {
+      const events = p.push(chunk);
+      expect(events).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            node: expect.objectContaining({ id: -1 }),
+          }),
+        ]),
+      );
+    }
+  });
 });
 
 describe('createPartialMarkdownParser — citations sidecar', () => {
