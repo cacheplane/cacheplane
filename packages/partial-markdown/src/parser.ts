@@ -14,12 +14,11 @@
 //
 // Streaming text: the internal state machine buffers line text until a
 // newline is received, at which point inline nodes are committed to the AST.
-// To surface streaming text growth as `value-updated` events before the line
-// is committed, the parser synthesises a virtual `text` node backed by
-// `state.lineBuffer`. This synthetic node lives at a stable reference outside
-// the normal id→mirror map. It is created on first non-empty buffer, updated
-// in place as chunks arrive, and retired (removed from the document children)
-// when the line is committed and real AST nodes take its place.
+// Plain paragraph growth is also exposed as `value-updated` events through a
+// virtual `text` node backed by `state.lineBuffer`. Structural open lines
+// (tables, blockquotes, lists, headings, code fences, etc.) are projected
+// through `root` instead, so their markdown delimiters are not leaked as
+// synthetic root text events.
 
 import { createInternal } from './create';
 import { pushInternal } from './push';
@@ -77,14 +76,8 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
 
   function syncPendingText(events: ParseEvent[]): void {
     const buf = state.lineBuffer;
-    if (!buf) {
-      // Buffer is empty — retire any existing pending node.
-      if (pendingTextNode) {
-        pendingTextNode.status = 'complete';
-        events.push({ type: 'node-completed', node: pendingTextNode });
-        pendingTextNode = null;
-        pendingTextLen = 0;
-      }
+    if (!buf || !shouldEmitSyntheticPendingText(buf)) {
+      retirePendingText(events);
       return;
     }
 
@@ -109,6 +102,33 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
       pendingTextLen = buf.length;
       events.push({ type: 'value-updated', node: pendingTextNode, delta });
     }
+  }
+
+  function retirePendingText(events: ParseEvent[]): void {
+    if (!pendingTextNode) return;
+    pendingTextNode.status = 'complete';
+    events.push({ type: 'node-completed', node: pendingTextNode });
+    pendingTextNode = null;
+    pendingTextLen = 0;
+  }
+
+  function shouldEmitSyntheticPendingText(buffer: string): boolean {
+    if (state.mode !== 'block') return false;
+    if (state.tablePending !== null) return false;
+    if (state.listStack.length > 0) return false;
+    if (isInsideBlockquote()) return false;
+
+    return !isProjectedStructuralOpenLine(buffer);
+  }
+
+  function isInsideBlockquote(): boolean {
+    const topId = state.stack[state.stack.length - 1];
+    const top = topId != null ? state.nodes[topId] : undefined;
+    return top?.kind === 'blockquote' && top.status === 'streaming';
+  }
+
+  function isProjectedStructuralOpenLine(buffer: string): boolean {
+    return /^(?: {0,3}(?:#{1,6}(?:\s|$)|`{3,}|~{3,}|>|[-+*]\s|\d+[.)]\s|\|))/.test(buffer);
   }
 
   // ── Mirror sync ───────────────────────────────────────────────────────────
