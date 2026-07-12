@@ -66,10 +66,11 @@ renderers.
 
 ## Mental Model
 
-The parser builds a Markdown node tree. Nodes are mutated in place as more input
-arrives. Each node has:
+The parser builds one canonical public Markdown node graph. Nodes are mutated in
+place as more input arrives, including optimistic open-line projections. Each
+node has:
 
-- `id`: stable numeric identity for the lifetime of the parser.
+- `id`: nonnegative numeric identity that is unique among live nodes.
 - `type`: Markdown node type.
 - `status`: `pending`, `streaming`, or `complete`.
 - `parent`: parent node or `null`.
@@ -88,6 +89,11 @@ linkDefinitions: Map<string, LinkDefinition>
 Citation and link-reference definitions are lifted out of the visible block
 tree and stored on the root.
 
+Continuing nodes keep their IDs. During an explicit same-operation grammar
+reinterpretation, a replacement may inherit the retired node's ID only after
+the old incarnation completes. Independent parser instances need not assign
+matching IDs, so do not use numeric IDs as a cross-parser identity contract.
+
 ## Push-Style API
 
 Use the push-style API for streaming UIs and long-lived node references.
@@ -105,7 +111,7 @@ for await (const chunk of llmStream) {
 
   for (const event of events) {
     if (event.type === 'value-updated') {
-      // event.node is the same object reference across future pushes.
+      // This is the canonical node object also exposed through parser.root.
     }
   }
 
@@ -125,6 +131,17 @@ interface ParseEvent {
   delta?: string;
 }
 ```
+
+Events and `parser.root` share the same canonical node objects; the parser does
+not create a separate event-only projection graph. When an open-line projection
+matches the committed parse, its node objects carry through to the committed
+tree instead of being replaced. A `node-completed` event can refer to a node
+that has just been retired by structural replacement; events for live nodes
+refer to the objects reachable from the current root.
+
+Event order is deterministic. Retired-node completions are emitted before
+creations, then value updates; traversal within those phases is stable tree
+order. Status-only completions for retained nodes are emitted in pre-order.
 
 ### Path Lookup
 
@@ -158,9 +175,11 @@ warnings through `state.warnings`.
 
 ## Structural-Sharing Snapshots
 
-`materialize(node)` converts a parser node tree into a plain JavaScript object
-graph. It uses a `WeakMap` cache keyed by node identity, so unchanged subtrees
-return the same object reference across calls.
+`materialize(node)` converts the canonical parser node graph into a plain
+JavaScript object graph. It uses a `WeakMap` cache keyed by node identity, so
+unchanged subtrees return the same materialized object reference across calls.
+When a canonical node changes in place, that node and the affected ancestor
+path are rematerialized while unrelated subtrees retain their references.
 
 ```ts
 const before = materialize(parser.root);
@@ -347,7 +366,16 @@ same purpose.
 `@cacheplane/partial-markdown` guarantees:
 
 - Truncated Markdown is parseable as in-progress input.
-- Public push-style node object identity is stable across pushes.
+- Push-style events and `parser.root` expose one canonical public node graph.
+- Public push-style node object identity is stable across pushes, including
+  when a matching projected node commits.
+- Numeric node IDs are nonnegative and unique among live nodes; continuing
+  nodes keep their IDs. During an explicit same-operation grammar
+  reinterpretation, a replacement may inherit the retired node's ID only after
+  the old incarnation completes. Independent parser instances need not assign
+  matching IDs.
+- Event ordering is deterministic, with replacement completions before
+  creations and updates.
 - Node status uses the same `pending | streaming | complete` lifecycle as
   `@cacheplane/partial-json`.
 - `materialize()` preserves references for unchanged subtrees.

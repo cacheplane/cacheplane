@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.5.8 — 2026-07-11
+
+### Changed
+
+- **Push-style projection now has one canonical root and event graph.** Events
+  reference the same public node objects exposed through `parser.root`, without
+  synthetic negative-ID nodes or partial delimiter text leaking into the live
+  tree. Matching projected nodes retain their object identity when committed.
+- **Event ordering is deterministic.** Replaced nodes complete before new nodes
+  are created, followed by updates, with stable tree-order traversal within
+  each phase.
+- **Public numeric IDs identify live nodes.** IDs are nonnegative and unique
+  among live nodes, and continuing nodes keep their IDs. During an explicit
+  same-operation grammar reinterpretation, a replacement may inherit the
+  retired node's ID only after the old incarnation completes. Independent
+  parser instances need not assign matching IDs.
+
+### Fixed
+
+- **Display-math projections update the canonical node immediately.** Streaming
+  display-math text is visible on the existing public node as each chunk
+  arrives, while that same object proceeds to completion.
+
+### Performance
+
+- Added incremental fast-path guards for long plain-text and punctuation-heavy
+  open lines, including leading-pipe input, to prevent repeated full-line
+  projection work while preserving structural fallback when Markdown becomes
+  decisive.
+
 ## 0.5.7 — 2026-07-09
 
 ### Fixed
