@@ -1,562 +1,514 @@
 // SPDX-License-Identifier: MIT
 //
-// Push-style parser API layered on top of the pull-style state machine
-// (create / push / finish). The pull machine produces an immutable
-// `StreamState` containing a flat array of `AstNode`s keyed by stable
-// numeric ids. This module mirrors that AST into the public `MarkdownNode`
-// shape (parent/children references, in-place mutation) and turns each
-// internal-state transition into a stream of `ParseEvent`s.
-//
-// Identity preservation: every AstNode id maps to exactly one MarkdownNode
-// instance for the lifetime of the parser. Mutating fields (`status`,
-// `text`, container `children`) are updated in-place on that instance so
-// consumers can hold long-lived references.
-//
-// Streaming text: the internal state machine buffers line text until a
-// newline is received, at which point inline nodes are committed to the AST.
-// Plain paragraph growth is also exposed as `value-updated` events through a
-// virtual `text` node backed by `state.lineBuffer`. Structural open lines
-// (tables, blockquotes, lists, headings, code fences, etc.) are projected
-// through `root` instead, so their markdown delimiters are not leaked as
-// synthetic root text events.
+// Push-style parser API layered on top of the immutable pull-style state
+// machine. After every operation, the committed state plus its open-line
+// preview are reconciled into one canonical public tree.
 
 import { createInternal } from './create';
 import { pushInternal } from './push';
 import { finishInternal } from './finish';
 import { handleBlockLine } from './handlers/block';
+import { detectHtmlBlockStart } from './handlers/html';
+import {
+  ATX_HEADING_RE,
+  BLOCKQUOTE_PREFIX_RE,
+  CITATION_DEF_RE,
+  FENCE_OPEN_RE,
+  LINK_DEF_RE,
+  ORDERED_LIST_MARKER_RE,
+  THEMATIC_BREAK_RE,
+  UNORDERED_LIST_MARKER_RE,
+} from './internals';
 import type {
   AstNode,
+  CitationDefinition,
   InternalState,
-  MarkdownNode,
+  LinkDefinition,
   MarkdownDocumentNode,
-  MarkdownTextNode,
   MarkdownInlineNode,
-  MarkdownCitationReferenceNode,
-  MarkdownLinkReferenceNode,
-  MarkdownListItemNode,
-  MarkdownTableNode,
-  MarkdownTableRowNode,
-  MarkdownTableCellNode,
-  CitationReferenceAstNode,
-  LinkReferenceAstNode,
-  ListItemAstNode,
-  TableAstNode,
-  TableRowAstNode,
-  TableCellAstNode,
-  StreamStatus,
+  MarkdownNode,
   ParseEvent,
   PartialMarkdownParser,
   PartialMarkdownParserOptions,
-  CitationDefinition,
-  LinkDefinition,
+  StreamStatus,
 } from './types';
 
-interface NodeSnapshot {
+interface VisibleNode {
+  ast: AstNode;
+  parserId: number;
+  parentParserId: number | null;
+  index: number | null;
   status: StreamStatus;
-  /** For text-bearing leaves: text length at last sync. */
-  textLen: number;
-  /** For containers: number of children at last sync. */
-  childrenLen: number;
+  children: VisibleNode[];
 }
 
-// Sentinel id for the synthetic pending-text node (never collides with real ids
-// since real ids are sequential non-negative integers starting at 0).
-const PENDING_TEXT_ID = -1;
+interface PublicEntry {
+  visible: VisibleNode;
+  node: MarkdownNode;
+  children: PublicEntry[];
+  scalars: Record<string, unknown>;
+  completed: boolean;
+}
+
+const STRUCTURAL_AST_KEYS = new Set(['id', 'kind', 'parentId', 'status', 'children']);
+const INLINE_REINTERPRET_RE = /[\\*_~`\[\]!()<>$\r\n]/;
+const INDENTED_CODE_RE = /^(?: {4}|\t)/;
+const TABLE_HEADER_PREFIX_RE = /^ {0,3}\|[^|]*\|/;
+const POSSIBLE_HTML_BLOCK_RE = /^ {0,3}</;
+const DISPLAY_DOLLAR_MATH_RE = /^ {0,3}\$\$/;
+const DISPLAY_BRACKET_MATH_RE = /^ {0,3}\\\[/;
 
 export function createPartialMarkdownParser(options?: PartialMarkdownParserOptions): PartialMarkdownParser {
   let state: InternalState = createInternal(options);
-  const mirror = new Map<number, MarkdownNode>();
-  const snap = new Map<number, NodeSnapshot>();
+  let rootEntry: PublicEntry | null = null;
+  let publicRoot: MarkdownDocumentNode | null = null;
 
-  // Synthetic node that surfaces buffered line text before it is committed.
-  let pendingTextNode: MarkdownTextNode | null = null;
-  let pendingTextLen = 0;
+  const usedPublicIds = new Set<number>();
+  let nextPublicId = 0;
+  const sidecarNodes = new Map<string, MarkdownNode>();
+  const sidecarIds = new Map<string, number>();
 
-  // ── Synthetic pending-text helpers ────────────────────────────────────────
-
-  function syncPendingText(events: ParseEvent[]): void {
-    const buf = state.lineBuffer;
-    if (!buf || !shouldEmitSyntheticPendingText(buf)) {
-      retirePendingText(events);
-      return;
-    }
-
-    if (!pendingTextNode) {
-      // Create synthetic node.
-      pendingTextNode = {
-        id: PENDING_TEXT_ID,
-        type: 'text',
-        status: 'streaming',
-        parent: mirror.get(state.rootId ?? -1) ?? null,
-        index: null,
-        text: buf,
-      } as MarkdownTextNode;
-      pendingTextLen = buf.length;
-      events.push({ type: 'node-created', node: pendingTextNode });
-      return;
-    }
-
-    if (buf.length > pendingTextLen) {
-      const delta = buf.slice(pendingTextLen);
-      pendingTextNode.text = buf;
-      pendingTextLen = buf.length;
-      events.push({ type: 'value-updated', node: pendingTextNode, delta });
-    }
+  function allocatePublicId(): number {
+    while (usedPublicIds.has(nextPublicId)) nextPublicId += 1;
+    const id = nextPublicId;
+    nextPublicId += 1;
+    usedPublicIds.add(id);
+    return id;
   }
 
-  function retirePendingText(events: ParseEvent[]): void {
-    if (!pendingTextNode) return;
-    pendingTextNode.status = 'complete';
-    events.push({ type: 'node-completed', node: pendingTextNode });
-    pendingTextNode = null;
-    pendingTextLen = 0;
+  function allocateSidecarId(identity: string): number {
+    const existing = sidecarIds.get(identity);
+    if (existing !== undefined) return existing;
+    const id = allocatePublicId();
+    sidecarIds.set(identity, id);
+    return id;
   }
 
-  function shouldEmitSyntheticPendingText(buffer: string): boolean {
-    if (state.mode !== 'block') return false;
-    if (state.tablePending !== null) return false;
-    if (state.listStack.length > 0) return false;
-    if (isInsideBlockquote()) return false;
+  function buildVisibleTree(currentState: InternalState): { root: VisibleNode | null; source: InternalState } {
+    if (currentState.rootId === null) return { root: null, source: currentState };
 
-    return !isProjectedStructuralOpenLine(buffer);
-  }
+    const needsPreview =
+      !currentState.complete &&
+      (currentState.lineBuffer.length > 0 || currentState.tablePending !== null);
+    const source = needsPreview
+      ? handleBlockLine(
+          { ...currentState, lineBuffer: '', optimisticInline: true, optimisticBlock: true },
+          currentState.lineBuffer,
+        )
+      : currentState;
 
-  function isInsideBlockquote(): boolean {
-    const topId = state.stack[state.stack.length - 1];
-    const top = topId != null ? state.nodes[topId] : undefined;
-    return top?.kind === 'blockquote' && top.status === 'streaming';
-  }
-
-  function isProjectedStructuralOpenLine(buffer: string): boolean {
-    return /^(?: {0,3}(?:#{1,6}(?:\s|$)|`{3,}|~{3,}|>|[-+*]\s|\d+[.)]\s|\|))/.test(buffer);
-  }
-
-  // ── Mirror sync ───────────────────────────────────────────────────────────
-
-  function syncMirror(): ParseEvent[] {
-    const events: ParseEvent[] = [];
-    const newIds: number[] = [];
-
-    // Pass 1 — create mirror nodes for any new AST nodes. Do NOT wire
-    // children yet; child nodes may not be in the mirror map until later in
-    // this same pass.
-    for (let i = 0; i < state.nodes.length; i++) {
-      const ast = state.nodes[i];
-      if (!ast) continue;
-
-      if (!mirror.has(i)) {
-        const md = createMirrorNode(ast);
-        mirror.set(i, md);
-        newIds.push(i);
-        snap.set(i, {
-          status: ast.status,
-          textLen: contentLength(ast),
-          childrenLen: 'children' in ast ? (ast as any).children.length : 0,
-        });
-      }
-    }
-
-    // Wire parent references for newly created nodes (parents are always
-    // created before children in the flat array).
-    for (const id of newIds) {
-      const ast = state.nodes[id]!;
-      const md = mirror.get(id)!;
-      if (ast.parentId !== null && ast.parentId >= 0) {
-        (md as any).parent = mirror.get(ast.parentId) ?? null;
-      }
-      events.push({ type: 'node-created', node: md });
-    }
-
-    // Pass 2 — diff existing nodes (including those just created, so that
-    // any same-push text growth or status transitions are picked up).
-    for (let i = 0; i < state.nodes.length; i++) {
-      const ast = state.nodes[i];
-      if (!ast) continue;
-      const md = mirror.get(i);
-      if (!md) continue;
-      const before = snap.get(i)!;
-
-      const textLen = contentLength(ast);
-      const childrenLen = 'children' in ast ? (ast as any).children.length : 0;
-      const textChanged =
-        (
-          ast.kind === 'text' ||
-          ast.kind === 'inline-code' ||
-          ast.kind === 'code-block' ||
-          ast.kind === 'math-inline' ||
-          ast.kind === 'math-display' ||
-          ast.kind === 'html-inline' ||
-          ast.kind === 'html-block'
-        ) &&
-        textLen !== before.textLen;
-      const childrenChanged = 'children' in ast && childrenLen !== before.childrenLen;
-      const statusChanged = ast.status !== before.status;
-
-      if (textChanged) {
-        const value = 'text' in ast ? (ast as any).text : (ast as any).raw;
-        const delta = value.slice(before.textLen);
-        if ('text' in ast) (md as any).text = value;
-        else (md as any).raw = value;
-        events.push({ type: 'value-updated', node: md, delta });
-      }
-
-      if (childrenChanged || newIds.includes(i)) {
-        // Rebuild children array from the current AST child ids.
-        if ('children' in ast) {
-          rebuildChildren(md, (ast as any).children as number[]);
-        }
-      }
-
-      if (statusChanged) {
-        md.status = ast.status;
-        if (ast.status === 'complete') {
-          events.push({ type: 'node-completed', node: md });
-        }
-      }
-
-      // Sync resolved flag for citation-reference nodes.
-      if (md.type === 'citation-reference' && ast.kind === 'citation-reference') {
-        const citeMd = md as MarkdownCitationReferenceNode;
-        const citeAst = ast as CitationReferenceAstNode;
-        if (citeMd.resolved !== citeAst.resolved) {
-          citeMd.resolved = citeAst.resolved;
-          events.push({ type: 'value-updated', node: citeMd });
-        }
-      }
-
-      // Sync resolved target fields for link-reference nodes.
-      if (md.type === 'link-reference' && ast.kind === 'link-reference') {
-        const linkMd = md as MarkdownLinkReferenceNode;
-        const linkAst = ast as LinkReferenceAstNode;
-        let changed = false;
-        if (linkMd.resolved !== linkAst.resolved) {
-          linkMd.resolved = linkAst.resolved;
-          changed = true;
-        }
-        if (linkMd.url !== linkAst.url) {
-          linkMd.url = linkAst.url;
-          changed = true;
-        }
-        if (linkMd.title !== linkAst.title) {
-          linkMd.title = linkAst.title;
-          changed = true;
-        }
-        if (linkMd.status !== linkAst.status) {
-          linkMd.status = linkAst.status;
-          changed = true;
-        }
-        if (changed) events.push({ type: 'value-updated', node: linkMd });
-      }
-
-      // Sync task field for list-item nodes.
-      if (md.type === 'list-item' && ast.kind === 'list-item') {
-        const li = md as MarkdownListItemNode;
-        const liAst = ast as ListItemAstNode;
-        const taskChanged =
-          JSON.stringify(li.task) !== JSON.stringify(liAst.task);
-        if (taskChanged) {
-          if (liAst.task !== undefined) li.task = liAst.task;
-          else delete (li as any).task;
-          events.push({ type: 'value-updated', node: li });
-        }
-      }
-
-      snap.set(i, {
-        status: ast.status,
-        textLen,
-        childrenLen,
-      });
-    }
-
-    // Sync citation defs sidecar onto the document root.
-    if (state.rootId !== null) {
-      const root = mirror.get(state.rootId) as MarkdownDocumentNode | undefined;
-      if (root) {
-        for (const [refId, def] of state.citationDefs) {
-          const children = def.childAstIds
-            .map(cid => mirror.get(cid))
-            .filter((n): n is MarkdownInlineNode => n !== undefined);
-          const existing = root.citations.get(refId);
-          if (
-            !existing ||
-            existing.index !== def.index ||
-            existing.status !== def.status ||
-            existing.children.length !== children.length
-          ) {
-            root.citations.set(refId, {
-              id: refId,
-              index: def.index,
-              children,
-              status: def.status,
-            });
-          }
-        }
-        // Remove deleted defs (defensive).
-        for (const refId of root.citations.keys()) {
-          if (!state.citationDefs.has(refId)) root.citations.delete(refId);
-        }
-
-        for (const [refId, def] of state.linkDefs) {
-          const existing = root.linkDefinitions.get(refId);
-          if (existing) {
-            existing.url = def.url;
-            existing.title = def.title;
-            existing.status = def.status;
-          } else {
-            root.linkDefinitions.set(refId, {
-              id: def.id,
-              label: def.label,
-              url: def.url,
-              title: def.title,
-              status: def.status,
-            });
-          }
-        }
-        for (const refId of root.linkDefinitions.keys()) {
-          if (!state.linkDefs.has(refId)) root.linkDefinitions.delete(refId);
-        }
-      }
-    }
-
-    // Sync the synthetic pending-text node (lineBuffer).
-    syncPendingText(events);
-
-    return events;
-  }
-
-  function rebuildChildren(node: MarkdownNode, childIds: number[]): void {
-    const children: MarkdownNode[] = [];
-    for (let i = 0; i < childIds.length; i++) {
-      const child = mirror.get(childIds[i]!);
-      if (child) {
-        (child as any).index = i;
-        (child as any).parent = node;
-        children.push(child);
-      }
-    }
-    (node as any).children = children;
-  }
-
-  function createMirrorNode(ast: AstNode): MarkdownNode {
-    const base: any = {
-      id: ast.id,
-      type: ast.kind,
-      status: ast.status,
-      parent: null,
-      index: null,
+    const visit = (
+      id: number,
+      parentParserId: number | null,
+      index: number | null,
+    ): VisibleNode => {
+      const ast = source.nodes[id]!;
+      const childIds = 'children' in ast ? (ast.children as number[]) : [];
+      const projected = needsPreview && ast !== currentState.nodes[id];
+      const visible: VisibleNode = {
+        ast,
+        parserId: id,
+        parentParserId,
+        index,
+        status: projected ? 'streaming' : ast.status,
+        children: [],
+      };
+      visible.children = childIds.map((childId, childIndex) => visit(childId, id, childIndex));
+      return visible;
     };
-    switch (ast.kind) {
-      case 'document':
-        base.children = [];
-        base.citations = new Map<string, CitationDefinition>();
-        base.linkDefinitions = new Map<string, LinkDefinition>();
-        break;
-      case 'paragraph':
-      case 'heading':
-      case 'blockquote':
-      case 'list':
-      case 'emphasis':
-      case 'strong':
-      case 'strikethrough':
-      case 'link':
-        base.children = [];
-        break;
-      case 'list-item': {
-        const liAst = ast as ListItemAstNode;
-        base.children = [];
-        if (liAst.task !== undefined) base.task = liAst.task;
-        break;
-      }
-      case 'table': {
-        const tableAst = ast as TableAstNode;
-        base.children = [];
-        base.alignments = tableAst.alignments;
-        break;
-      }
-      case 'table-row': {
-        const rowAst = ast as TableRowAstNode;
-        base.children = [];
-        base.isHeader = rowAst.isHeader;
-        break;
-      }
-      case 'table-cell': {
-        const cellAst = ast as TableCellAstNode;
-        base.children = [];
-        base.alignment = cellAst.alignment;
-        break;
-      }
-      case 'citation-reference': {
-        const citeAst = ast as CitationReferenceAstNode;
-        base.refId = citeAst.refId;
-        base.index = citeAst.index;  // citation index (shadows sibling position)
-        base.resolved = citeAst.resolved;
-        break;
-      }
-      case 'link-reference': {
-        const refAst = ast as LinkReferenceAstNode;
-        base.refId = refAst.refId;
-        base.label = refAst.label;
-        base.form = refAst.form;
-        base.resolved = refAst.resolved;
-        base.url = refAst.url;
-        base.title = refAst.title;
-        base.children = [];
-        break;
-      }
-      case 'math-inline':
-      case 'math-display':
-        base.text = ast.text;
-        base.delimiter = ast.delimiter;
-        break;
-      case 'html-inline':
-        base.raw = ast.raw;
-        break;
-      case 'html-block':
-        base.raw = ast.raw;
-        base.htmlKind = ast.htmlKind;
-        break;
-    }
-    if (ast.kind === 'heading') base.level = ast.level;
-    if (ast.kind === 'list') {
-      base.ordered = ast.ordered;
-      base.start = ast.start;
-      base.tight = ast.tight;
-      base.markerCol = ast.markerCol;
-      base.contentCol = ast.contentCol;
-    }
-    if (ast.kind === 'link') {
-      base.url = ast.url;
-      base.title = ast.title;
-    }
-    if (ast.kind === 'autolink') {
-      base.url = ast.url;
-      base.text = ast.text;
-    }
-    if (ast.kind === 'image') {
-      base.url = ast.url;
-      base.title = ast.title;
-      base.alt = ast.alt;
-    }
-    if (ast.kind === 'code-block') {
-      base.variant = ast.variant;
-      base.language = ast.language;
-      base.text = ast.text;
-    }
-    if (ast.kind === 'text' || ast.kind === 'inline-code') {
-      base.text = ast.text;
-    }
-    return base;
+
+    return { root: visit(source.rootId!, null, null), source };
   }
 
-  // ── Streaming open-line projection (B.2) ──────────────────────────────────
-  // Build a fresh MarkdownNode subtree from a preview AST node, marked
-  // `streaming`. Used only for the open (unterminated) line, which changes
-  // every push — so these nodes are intentionally rebuilt rather than mirrored.
-  function astToStreamingNode(id: number, nodes: readonly (AstNode | undefined)[]): MarkdownNode {
-    const ast = nodes[id]!;
-    const md = createMirrorNode(ast);
-    (md as any).status = 'streaming';
-    const kids = (ast as any).children;
-    if (Array.isArray(kids)) {
-      (md as any).children = kids.map((cid: number, i: number) => {
-        const c = astToStreamingNode(cid, nodes);
-        (c as any).index = i;
-        (c as any).parent = md;
-        return c;
-      });
+  function reconcile(): ParseEvent[] {
+    const { root: nextVisibleRoot, source } = buildVisibleTree(state);
+    if (!nextVisibleRoot) {
+      rootEntry = null;
+      publicRoot = null;
+      return [];
     }
-    return md;
+
+    const oldEntries = rootEntry ? preOrder(rootEntry) : [];
+    const oldPostOrder = rootEntry ? postOrder(rootEntry) : [];
+    const oldByMatch = new Map(oldEntries.map((entry) => [matchKey(entry.visible), entry]));
+    const nextVisible = visiblePreOrder(nextVisibleRoot);
+    const matchedOld = new Set<PublicEntry>();
+
+    for (const visible of nextVisible) {
+      const old = oldByMatch.get(matchKey(visible));
+      if (old) matchedOld.add(old);
+    }
+
+    const removed = new Set(oldEntries.filter((entry) => !matchedOld.has(entry)));
+    const reinterpretations = new Map<string, PublicEntry>();
+    for (const entry of removed) {
+      if (!entry.completed) reinterpretations.set(positionKey(entry.visible), entry);
+    }
+
+    const newEntries = new Set<PublicEntry>();
+    const updatedEntries = new Map<PublicEntry, string | undefined>();
+
+    const construct = (visible: VisibleNode): PublicEntry => {
+      const exact = oldByMatch.get(matchKey(visible));
+      let entry: PublicEntry;
+
+      if (exact) {
+        entry = exact;
+        const nextScalars = snapshotScalars(visible.ast);
+        const delta = scalarDelta(entry.scalars, nextScalars);
+        if (!scalarRecordsEqual(entry.scalars, nextScalars)) updatedEntries.set(entry, delta);
+        applyScalars(entry.node, nextScalars, entry.scalars);
+        entry.scalars = nextScalars;
+        entry.visible = visible;
+      } else {
+        const replaced = reinterpretations.get(positionKey(visible));
+        const canReuse = replaced !== undefined && replaced.visible.ast.kind !== visible.ast.kind;
+        const publicId = canReuse ? replaced.node.id : allocatePublicId();
+        entry = {
+          visible,
+          node: createPublicNode(visible.ast, publicId, visible.status),
+          children: [],
+          scalars: snapshotScalars(visible.ast),
+          completed: false,
+        };
+        newEntries.add(entry);
+      }
+
+      entry.children = visible.children.map(construct);
+      wireChildren(entry);
+      return entry;
+    };
+
+    const nextRootEntry = construct(nextVisibleRoot);
+    const nextPreOrder = preOrder(nextRootEntry);
+    const removedCompletionEvents: ParseEvent[] = [];
+
+    // Removed objects remain valid completion payloads and complete post-order.
+    for (const entry of oldPostOrder) {
+      if (removed.has(entry) && !entry.completed) {
+        entry.node.status = 'complete';
+        entry.completed = true;
+        removedCompletionEvents.push({ type: 'node-completed', node: entry.node });
+      }
+    }
+
+    const creationEvents = nextPreOrder
+      .filter((entry) => newEntries.has(entry))
+      .map<ParseEvent>((entry) => ({ type: 'node-created', node: entry.node }));
+
+    // Immediate and retained status completions follow structural pre-order.
+    // Newly complete nodes still have creation ordered before completion.
+    const statusCompletionEvents: ParseEvent[] = [];
+    for (const entry of nextPreOrder) {
+      const completesImmediately = newEntries.has(entry) && entry.visible.status === 'complete';
+      const retainedCompletion =
+        !newEntries.has(entry) && entry.visible.status === 'complete' && entry.node.status !== 'complete';
+      if ((completesImmediately || retainedCompletion) && !entry.completed) {
+        entry.node.status = 'complete';
+        entry.completed = true;
+        statusCompletionEvents.push({ type: 'node-completed', node: entry.node });
+      }
+    }
+
+    // Apply final statuses after completion detection so streaming-to-complete
+    // transitions cannot be hidden by scalar reconciliation.
+    for (const entry of nextPreOrder) entry.node.status = entry.visible.status;
+
+    const updateEvents = nextPreOrder
+      .filter((entry) => !newEntries.has(entry) && updatedEntries.has(entry))
+      .map<ParseEvent>((entry) => ({
+        type: 'value-updated',
+        node: entry.node,
+        delta: updatedEntries.get(entry),
+      }));
+
+    rootEntry = nextRootEntry;
+    publicRoot = nextRootEntry.node as MarkdownDocumentNode;
+    syncSidecars(source, publicRoot);
+
+    return [...removedCompletionEvents, ...creationEvents, ...statusCompletionEvents, ...updateEvents];
   }
 
-  // Project the committed document with the open `lineBuffer` parsed and grafted
-  // on. Runs the block handler on an immutable COPY (committed state + mirror are
-  // never touched); committed blocks (same AST object in the preview) reuse their
-  // mirror nodes so their identity is preserved across pushes.
-  function buildStreamingRoot(committedDoc: MarkdownDocumentNode): MarkdownDocumentNode {
-    const preview = handleBlockLine(
-      { ...state, lineBuffer: '', optimisticInline: true, optimisticBlock: true },
-      state.lineBuffer,
-    );
-    if (preview.rootId === null) return committedDoc;
-    const prevDoc = preview.nodes[preview.rootId] as any;
-    const childIds: number[] = prevDoc?.children ?? [];
-    const children: MarkdownNode[] = childIds.map((cid, i) => {
-      if (isUnchangedPreviewSubtree(cid, preview.nodes) && mirror.has(cid)) {
-        return mirror.get(cid)!; // unchanged committed block — reuse (identity)
+  function syncSidecars(source: InternalState, root: MarkdownDocumentNode): void {
+    const sidecarNode = (owner: string, id: number): MarkdownNode | undefined => {
+      const ast = source.nodes[id];
+      if (!ast) return undefined;
+      const key = `${owner}:${id}:${ast.kind}`;
+      let node = sidecarNodes.get(key);
+      const scalars = snapshotScalars(ast);
+      if (!node) {
+        node = createPublicNode(ast, allocateSidecarId(key), ast.status);
+        sidecarNodes.set(key, node);
+      } else {
+        applyScalars(node, scalars);
+        node.status = ast.status;
       }
-      const node = astToStreamingNode(cid, preview.nodes);
-      (node as any).index = i;
+      if ('children' in ast && 'children' in node) {
+        const children = (ast.children as number[])
+          .map((childId) => sidecarNode(owner, childId))
+          .filter((child): child is MarkdownNode => child !== undefined);
+        children.forEach((child, index) => {
+          child.parent = node!;
+          child.index = index;
+        });
+        (node as { children: MarkdownNode[] }).children = children;
+      }
       return node;
-    });
-    return { ...(committedDoc as any), children } as MarkdownDocumentNode;
+    };
+
+    for (const [refId, def] of source.citationDefs) {
+      const owner = `citation:${refId}`;
+      const children = def.childAstIds
+        .map((childId) => sidecarNode(owner, childId))
+        .filter((node): node is MarkdownInlineNode => node !== undefined);
+      children.forEach((child) => {
+        child.parent = null;
+      });
+      const existing = root.citations.get(refId);
+      if (existing) {
+        existing.index = def.index;
+        existing.status = def.status;
+        existing.children = children;
+      } else {
+        root.citations.set(refId, { id: refId, index: def.index, status: def.status, children });
+      }
+    }
+    for (const refId of root.citations.keys()) {
+      if (!source.citationDefs.has(refId)) root.citations.delete(refId);
+    }
+
+    for (const [refId, def] of source.linkDefs) {
+      const existing = root.linkDefinitions.get(refId);
+      if (existing) Object.assign(existing, def);
+      else root.linkDefinitions.set(refId, { ...def });
+    }
+    for (const refId of root.linkDefinitions.keys()) {
+      if (!source.linkDefs.has(refId)) root.linkDefinitions.delete(refId);
+    }
   }
 
-  function isUnchangedPreviewSubtree(id: number, previewNodes: readonly (AstNode | undefined)[]): boolean {
-    const previewNode = previewNodes[id];
-    if (!previewNode || previewNode !== state.nodes[id]) return false;
+  function incrementalPlainTextEntry(chunk: string): PublicEntry | null {
+    if (
+      chunk.length === 0 ||
+      INLINE_REINTERPRET_RE.test(chunk) ||
+      state.complete ||
+      state.mode !== 'block' ||
+      state.rootId === null ||
+      state.stack.length !== 1 ||
+      state.stack[0] !== state.rootId ||
+      state.currentNodeId !== null ||
+      state.listStack.length !== 0 ||
+      state.tablePending !== null ||
+      state.codeFenceMarker !== null ||
+      state.mathOpener !== null ||
+      state.mathNodeId !== null ||
+      state.htmlBlockKind !== null ||
+      state.htmlBlockNodeId !== null ||
+      state.htmlInlinePending.length !== 0 ||
+      state.textBuffer.length !== 0 ||
+      state.optimisticInline === true ||
+      state.optimisticBlock === true ||
+      state.lineBuffer.length === 0 ||
+      INLINE_REINTERPRET_RE.test(state.lineBuffer[state.lineBuffer.length - 1]!) ||
+      rootEntry === null ||
+      publicRoot !== rootEntry.node
+    ) {
+      return null;
+    }
 
-    const children = (previewNode as any).children;
-    if (!Array.isArray(children)) return true;
-    return children.every((childId: number) => isUnchangedPreviewSubtree(childId, previewNodes));
+    const paragraph = rootEntry.children[rootEntry.children.length - 1];
+    if (
+      !paragraph ||
+      paragraph.node.type !== 'paragraph' ||
+      paragraph.visible.ast.kind !== 'paragraph' ||
+      paragraph.node.status !== 'streaming' ||
+      paragraph.visible.status !== 'streaming' ||
+      paragraph.children.length !== 1 ||
+      rootEntry.visible.children[rootEntry.visible.children.length - 1] !== paragraph.visible
+    ) {
+      return null;
+    }
+
+    const text = paragraph.children[0]!;
+    if (
+      text.node.type !== 'text' ||
+      text.node.status !== 'streaming' ||
+      text.visible.status !== 'streaming' ||
+      text.visible.ast.kind !== 'text' ||
+      text.children.length !== 0 ||
+      paragraph.visible.children.length !== 1 ||
+      paragraph.visible.children[0] !== text.visible ||
+      text.node.parent !== paragraph.node ||
+      text.visible.ast.text !== state.lineBuffer ||
+      text.scalars.text !== state.lineBuffer ||
+      !('text' in text.node) ||
+      text.node.text !== state.lineBuffer
+    ) {
+      return null;
+    }
+
+    const combinedLine = state.lineBuffer + chunk;
+    if (wouldReinterpretTopLevelParagraph(combinedLine, chunk, state)) return null;
+
+    return text;
   }
 
-  // Memoized streaming projection — rebuilt once per push, so repeated `root` /
-  // getByPath reads within one state return the SAME object.
-  let openLineRoot: MarkdownDocumentNode | null = null;
+  function updateIncrementalPlainText(entry: PublicEntry, delta: string): ParseEvent[] {
+    const ast = { ...entry.visible.ast, text: state.lineBuffer } as AstNode;
+    const scalars = snapshotScalars(ast);
+    applyScalars(entry.node, scalars, entry.scalars);
+    entry.visible.ast = ast;
+    entry.scalars = scalars;
+    return [{ type: 'value-updated', node: entry.node, delta }];
+  }
 
   const parser: PartialMarkdownParser = {
     push(chunk: string): ParseEvent[] {
-      openLineRoot = null;
+      const incrementalText = incrementalPlainTextEntry(chunk);
       state = pushInternal(state, chunk);
-      return syncMirror();
+      if (incrementalText) return updateIncrementalPlainText(incrementalText, chunk);
+      return reconcile();
     },
     finish(): ParseEvent[] {
-      openLineRoot = null;
       state = finishInternal(state);
-      return syncMirror();
+      return reconcile();
     },
     get root(): MarkdownDocumentNode | null {
-      if (state.rootId === null) return null;
-      const committed = (mirror.get(state.rootId) ?? null) as MarkdownDocumentNode | null;
-      // Fast path: nothing buffered AND no tablePending → the stable committed document.
-      if (!committed || (!state.lineBuffer && state.tablePending === null)) return committed;
-      // Open line present (or tablePending awaiting delimiter) → graft its parsed, streaming projection (B.2), once.
-      // In the tablePending window lineBuffer is empty, so buildStreamingRoot projects the buffered header itself.
-      if (!openLineRoot) openLineRoot = buildStreamingRoot(committed);
-      return openLineRoot;
+      return publicRoot;
     },
     getByPath(path: string): MarkdownNode | null {
-      if (path === '') return parser.root;
+      if (path === '') return publicRoot;
       if (!path.startsWith('/')) return null;
       const segments = path.slice(1).split('/').map(unescapePointer);
-      let node: any = parser.root;
-      let i = 0;
-      while (i < segments.length) {
-        if (!node) return null;
-        const segment = segments[i]!;
-        if (segment === 'children' && Array.isArray(node.children)) {
-          const next = segments[i + 1];
-          if (next == null) return null;
-          const idx = parseInt(next, 10);
-          if (!Number.isFinite(idx)) return null;
-          node = node.children[idx] ?? null;
-          i += 2;
-          continue;
-        }
-        return null;
+      let node: MarkdownNode | null = publicRoot;
+      for (let i = 0; i < segments.length;) {
+        if (!node || segments[i] !== 'children' || !('children' in node)) return null;
+        const rawIndex = segments[i + 1];
+        if (rawIndex === undefined || !/^\d+$/.test(rawIndex)) return null;
+        node = (node.children as MarkdownNode[])[Number(rawIndex)] ?? null;
+        i += 2;
       }
-      return node ?? null;
+      return node;
     },
   };
+
   return parser;
 }
 
-function contentLength(ast: AstNode): number {
-  if ('text' in ast) return (ast as any).text.length;
-  if ('raw' in ast) return (ast as any).raw.length;
-  return 0;
+function createPublicNode(ast: AstNode, id: number, status: StreamStatus): MarkdownNode {
+  const node: Record<string, unknown> = {
+    id,
+    type: ast.kind,
+    status,
+    parent: null,
+    index: null,
+    ...snapshotScalars(ast),
+  };
+  if ('children' in ast) node.children = [];
+  if (ast.kind === 'document') {
+    node.citations = new Map<string, CitationDefinition>();
+    node.linkDefinitions = new Map<string, LinkDefinition>();
+  }
+  return node as unknown as MarkdownNode;
 }
 
-function unescapePointer(s: string): string {
-  return s.replace(/~1/g, '/').replace(/~0/g, '~');
+function snapshotScalars(ast: AstNode): Record<string, unknown> {
+  const scalars: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(ast)) {
+    if (STRUCTURAL_AST_KEYS.has(key)) continue;
+    scalars[key] = cloneScalar(value);
+  }
+  return scalars;
+}
+
+function cloneScalar(value: unknown): unknown {
+  if (Array.isArray(value)) return [...value];
+  if (value && typeof value === 'object') return { ...value };
+  return value;
+}
+
+function applyScalars(
+  node: MarkdownNode,
+  next: Record<string, unknown>,
+  previous: Record<string, unknown> = {},
+): void {
+  const target = node as unknown as Record<string, unknown>;
+  for (const key of Object.keys(previous)) {
+    if (!(key in next)) delete target[key];
+  }
+  Object.assign(target, next);
+}
+
+function scalarRecordsEqual(left: Record<string, unknown>, right: Record<string, unknown>): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return leftKeys.length === rightKeys.length && leftKeys.every((key) => scalarEqual(left[key], right[key]));
+}
+
+function scalarEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function scalarDelta(previous: Record<string, unknown>, next: Record<string, unknown>): string | undefined {
+  for (const key of ['text', 'raw']) {
+    const before = previous[key];
+    const after = next[key];
+    if (typeof before === 'string' && typeof after === 'string' && after.startsWith(before)) {
+      return after.slice(before.length);
+    }
+  }
+  return undefined;
+}
+
+function wireChildren(entry: PublicEntry): void {
+  if (!('children' in entry.node)) return;
+  const children = entry.children.map((child, index) => {
+    child.node.parent = entry.node;
+    child.node.index = index;
+    return child.node;
+  });
+  (entry.node as { children: MarkdownNode[] }).children = children;
+}
+
+function matchKey(node: VisibleNode): string {
+  return `${node.parserId}:${node.ast.kind}:${node.parentParserId ?? 'root'}:${node.index ?? 'root'}`;
+}
+
+function positionKey(node: VisibleNode): string {
+  return `${node.parserId}:${node.parentParserId ?? 'root'}:${node.index ?? 'root'}`;
+}
+
+function wouldReinterpretTopLevelParagraph(line: string, chunk: string, state: InternalState): boolean {
+  return (
+    ATX_HEADING_RE.test(line) ||
+    BLOCKQUOTE_PREFIX_RE.test(line) ||
+    ORDERED_LIST_MARKER_RE.test(line) ||
+    UNORDERED_LIST_MARKER_RE.test(line) ||
+    INDENTED_CODE_RE.test(line) ||
+    FENCE_OPEN_RE.test(line) ||
+    THEMATIC_BREAK_RE.test(line) ||
+    (chunk.includes('|') && TABLE_HEADER_PREFIX_RE.test(line)) ||
+    CITATION_DEF_RE.test(line) ||
+    LINK_DEF_RE.test(line) ||
+    (state.options.math.dollar && DISPLAY_DOLLAR_MATH_RE.test(line)) ||
+    (state.options.math.bracket && DISPLAY_BRACKET_MATH_RE.test(line)) ||
+    (POSSIBLE_HTML_BLOCK_RE.test(line) && detectHtmlBlockStart(line) !== null)
+  );
+}
+
+function visiblePreOrder(root: VisibleNode): VisibleNode[] {
+  return [root, ...root.children.flatMap(visiblePreOrder)];
+}
+
+function preOrder(root: PublicEntry): PublicEntry[] {
+  return [root, ...root.children.flatMap(preOrder)];
+}
+
+function postOrder(root: PublicEntry): PublicEntry[] {
+  return [...root.children.flatMap(postOrder), root];
+}
+
+function unescapePointer(value: string): string {
+  return value.replace(/~1/g, '/').replace(/~0/g, '~');
 }

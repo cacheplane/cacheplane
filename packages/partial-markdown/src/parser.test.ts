@@ -1,6 +1,23 @@
 // SPDX-License-Identifier: MIT
 import { describe, it, expect } from 'vitest';
 import { createPartialMarkdownParser } from './parser';
+import type { MarkdownNode, ParseEvent } from './types';
+
+function childNodes(node: MarkdownNode): MarkdownNode[] {
+  return 'children' in node ? [...node.children] : [];
+}
+
+function descendantsPostOrder(node: MarkdownNode): MarkdownNode[] {
+  return [...childNodes(node).flatMap(descendantsPostOrder), node];
+}
+
+function descendantsPreOrder(node: MarkdownNode): MarkdownNode[] {
+  return [node, ...childNodes(node).flatMap(descendantsPreOrder)];
+}
+
+function eventNodes(events: ParseEvent[], type: ParseEvent['type']): MarkdownNode[] {
+  return events.filter((event) => event.type === type).map((event) => event.node);
+}
 
 describe('createPartialMarkdownParser', () => {
   it('starts with null root', () => {
@@ -29,6 +46,82 @@ describe('createPartialMarkdownParser', () => {
     const events = p.push(' world.');
     const updates = events.filter(e => e.type === 'value-updated');
     expect(updates.length).toBeGreaterThan(0);
+  });
+
+  it('streams a long plain paragraph incrementally before structural fallback', () => {
+    const streamPlainText = (input: string): ReturnType<typeof createPartialMarkdownParser> => {
+      const p = createPartialMarkdownParser();
+      p.push(input[0]!);
+      const root = p.root!;
+      const paragraph = root.children[0]!;
+      const text = childNodes(paragraph)[0]!;
+      let events: ParseEvent[] = [];
+
+      for (const character of input.slice(1)) events = p.push(character);
+
+      expect(p.root).toBe(root);
+      expect(p.root!.children[0]).toBe(paragraph);
+      expect(childNodes(paragraph)[0]).toBe(text);
+      expect(text).toMatchObject({ status: 'streaming', text: input });
+      expect(events).toEqual([{ type: 'value-updated', node: text, delta: input.at(-1) }]);
+      return p;
+    };
+
+    streamPlainText('a.'.repeat(4_000));
+    streamPlainText(`|${'a'.repeat(19_999)}`);
+
+    const input = 'a'.repeat(8_000);
+    const p = streamPlainText(input);
+    const root = p.root!;
+    const paragraph = root.children[0]!;
+
+    p.push('*');
+    expect(p.root).toBe(root);
+    expect(p.root!.children[0]).toBe(paragraph);
+    expect(childNodes(paragraph).map((node) => ('text' in node ? node.text : '')).join('')).toBe(`${input}*`);
+
+    p.push('\n');
+    expect(p.root).toBe(root);
+    expect(p.root!.children[0]).toBe(paragraph);
+    expect(childNodes(paragraph).map((node) => ('text' in node ? node.text : '')).join('')).toBe(`${input}*`);
+  }, 500);
+
+  it('reconciles provisional plain text when a top-level block prefix becomes decisive', () => {
+    const list = createPartialMarkdownParser();
+    list.push('1');
+    const listParagraph = list.root!.children[0]!;
+    list.push('.');
+    expect(list.root!.children[0]).toBe(listParagraph);
+
+    list.push(' ');
+    expect(list.root!.children[0]?.type).toBe('list');
+
+    const thematicBreak = createPartialMarkdownParser();
+    thematicBreak.push('-');
+    const breakParagraph = thematicBreak.root!.children[0]!;
+    thematicBreak.push('-');
+    expect(thematicBreak.root!.children[0]).toBe(breakParagraph);
+
+    thematicBreak.push('-');
+    expect(thematicBreak.root!.children[0]?.type).toBe('thematic-break');
+
+    const table = createPartialMarkdownParser();
+    table.push('|');
+    const tableParagraph = table.root!.children[0]!;
+    for (const character of ' A ') table.push(character);
+    expect(table.root!.children[0]).toBe(tableParagraph);
+
+    table.push('|');
+    expect(table.root!.children[0]?.type).toBe('table');
+  });
+
+  it('falls back when prior literal text can become an inline construct', () => {
+    const p = createPartialMarkdownParser();
+    p.push('*');
+
+    p.push('a');
+
+    expect(childNodes(p.root!.children[0]!)[0]?.type).toBe('emphasis');
   });
 
   it('preserves committed node identity across pushes (same JS reference)', () => {
@@ -132,6 +225,93 @@ describe('createPartialMarkdownParser', () => {
         ]),
       );
     }
+  });
+
+  it.each(['---', '***', '___'])('replaces provisional text when %s becomes a thematic break', (delimiter) => {
+    const p = createPartialMarkdownParser();
+    p.push(delimiter[0]!);
+    expect(p.root?.children[0]?.type).toBe('paragraph');
+    p.push(delimiter[1]!);
+    expect(p.root?.children[0]?.type).toBe('paragraph');
+
+    const provisionalParagraph = p.root!.children[0]!;
+    const provisionalText = descendantsPreOrder(provisionalParagraph).filter((node) => node.type === 'text');
+    const events = p.push(delimiter[2]!);
+    const root = p.root!;
+    const replacement = root.children[0]!;
+    const reachable = new Set(descendantsPreOrder(root));
+    const completions = eventNodes(events, 'node-completed');
+    const creations = eventNodes(events, 'node-created');
+    const liveDelimiterTextEvents = events.filter(
+      (event) => event.node.type === 'text' && event.type !== 'node-completed' && reachable.has(event.node),
+    );
+
+    expect(provisionalText.length).toBeGreaterThan(0);
+    for (const text of provisionalText) {
+      expect(completions.filter((node) => node === text)).toHaveLength(1);
+      expect(reachable.has(text)).toBe(false);
+    }
+    expect(replacement).toMatchObject({ id: expect.any(Number), type: 'thematic-break', index: 0 });
+    expect(replacement.id).toBeGreaterThanOrEqual(0);
+    expect(replacement.parent).toBe(root);
+    expect(creations.filter((node) => node === replacement)).toHaveLength(1);
+    expect(root.children).toEqual([replacement]);
+    expect(liveDelimiterTextEvents).toEqual([]);
+    expect(descendantsPreOrder(root).filter((node) => node.type === 'text')).toEqual([]);
+  });
+
+  it('retains a matching projected node when the open line commits', () => {
+    const p = createPartialMarkdownParser();
+    p.push('# heading');
+    const projectedHeading = p.root!.children[0]!;
+    const projectedText = childNodes(projectedHeading)[0]!;
+
+    const events = p.push('\n');
+    const committedHeading = p.root!.children[0]!;
+
+    expect(committedHeading).toBe(projectedHeading);
+    expect(childNodes(committedHeading)[0]).toBe(projectedText);
+    expect(eventNodes(events, 'node-created')).not.toContain(projectedHeading);
+    expect(eventNodes(events, 'node-created')).not.toContain(projectedText);
+    expect(eventNodes(events, 'node-completed').filter((node) => node === projectedHeading)).toHaveLength(1);
+    expect(eventNodes(events, 'node-completed').filter((node) => node === projectedText)).toHaveLength(1);
+  });
+
+  it('orders retained status completions in pre-order', () => {
+    const p = createPartialMarkdownParser();
+    p.push('# heading');
+    const heading = p.root!.children[0]!;
+    const text = childNodes(heading)[0]!;
+
+    const events = p.push('\n');
+
+    expect(eventNodes(events, 'node-completed')).toEqual([heading, text]);
+  });
+
+  it('orders replacement completion, creation, and update phases canonically', () => {
+    const p = createPartialMarkdownParser();
+    p.push('--');
+    const removedParagraph = p.root!.children[0]!;
+    const removedPostOrder = descendantsPostOrder(removedParagraph);
+
+    const events = p.push('-');
+    const replacement = p.root!.children[0]!;
+    const replacementPreOrder = descendantsPreOrder(replacement);
+
+    expect(replacement.type).toBe('thematic-break');
+    expect(eventNodes(events, 'node-completed')).toEqual(removedPostOrder);
+    expect(eventNodes(events, 'node-created')).toEqual(replacementPreOrder);
+
+    const phases = events.map((event) => {
+      if (event.type === 'node-completed') return 0;
+      if (event.type === 'node-created') return 1;
+      return 2;
+    });
+    expect(phases).toEqual([...phases].sort((left, right) => left - right));
+
+    const updates = eventNodes(events, 'value-updated');
+    const updateOrder = descendantsPreOrder(p.root!).filter((node) => updates.includes(node));
+    expect(updates).toEqual(updateOrder);
   });
 });
 

@@ -36,7 +36,8 @@ describe('math across chunk boundaries', () => {
     const math = parser.root!.children[0] as any;
 
     parser.push('\\sum_');
-    expect(math.text).toBe('');
+    expect(parser.root!.children[0]).toBe(math);
+    expect(math.text).toBe('\\sum_');
     parser.push('i x_i\n');
     expect(math.text).toBe('\\sum_i x_i');
     parser.push('= y\n$$\n');
