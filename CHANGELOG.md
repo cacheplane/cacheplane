@@ -2,10 +2,22 @@
 
 Monorepo-level changes (CI, release tooling, workspace structure). Per-package release notes live in each package's own CHANGELOG:
 
+- [`packages/json-stream/CHANGELOG.md`](packages/json-stream/CHANGELOG.md)
 - [`packages/partial-json/CHANGELOG.md`](packages/partial-json/CHANGELOG.md)
 - [`packages/partial-markdown/CHANGELOG.md`](packages/partial-markdown/CHANGELOG.md)
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
+
+## 2026-08-07
+
+### Added
+
+- Migrated `@cacheplane/json-stream` from `cacheplane/pretable`, where it had been source-resident despite carrying the `@cacheplane` scope. History preserved via `git subtree split`, so `git blame` still reaches the original commits. Package configs (`tsup`, `vitest`, `tsconfig`) replaced with the workspace-standard versions; `README.md` and `LICENSE` added to match its siblings.
+- `json-stream-v*` added to the publish workflow's tag routing, and `json-stream` to the CI package matrix.
+
+### Notes
+
+- Releases up to `0.0.3` were cut from `cacheplane/pretable` by changesets. `0.0.4` onward is released from here via the tag-routed workflow, and is the first `json-stream` release to carry a provenance attestation.
 
 ## 2026-05-07
 

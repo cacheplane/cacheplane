@@ -10,8 +10,8 @@
   },
   "scripts": {
     "build": "pnpm -r --filter './packages/*' build",
-    "test": "pnpm -r --filter './packages/*' test",
-    "test:coverage": "pnpm -r --filter './packages/*' test:coverage",
+    "test": "pnpm -r --workspace-concurrency=1 --filter './packages/*' test",
+    "test:coverage": "pnpm -r --workspace-concurrency=1 --filter './packages/*' test:coverage",
     "lint": "eslint .",
     "typecheck": "pnpm -r typecheck",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"

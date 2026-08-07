@@ -3,6 +3,7 @@ name: Publish
 on:
   push:
     tags:
+      - 'json-stream-v*'
       - 'partial-json-v*'
       - 'partial-markdown-v*'
 
