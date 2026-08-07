@@ -1,0 +1,43 @@
+{
+  "name": "@cacheplane/json-stream",
+  "version": "0.0.3",
+  "description": "Small JSON stream parsing utilities used by Pretable streaming adapters.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cacheplane/pretable.git",
+    "directory": "packages/json-stream"
+  },
+  "homepage": "https://pretable.ai/docs/streaming/parsers",
+  "bugs": {
+    "url": "https://github.com/cacheplane/pretable/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "lint": "eslint src --ext .ts",
+    "lint:packaging": "publint --strict && attw --pack",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -b --pretty false"
+  }
+}
