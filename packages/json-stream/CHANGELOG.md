@@ -1,8 +1,16 @@
-# @cacheplane/json-stream
+# Changelog
 
-## 0.0.3
+Releases up to and including `0.0.3` were cut from `cacheplane/pretable`, where
+this package originally lived. Entries below `0.0.3` are the changesets-generated
+history from that repo, preserved verbatim.
 
-## 0.0.2
+## 0.0.3 — 2026-08-07
+
+Version-alignment release, no behavior changes. This package was in a changesets
+`fixed` group with `@pretable/core` and `@pretable/react`, so it bumped whenever
+they did. The last release from `cacheplane/pretable`.
+
+## 0.0.2 — 2026-08-05
 
 ### Patch Changes
 
@@ -10,7 +18,7 @@
   metadata to the public packages as part of the open-source community health
   pass.
 
-## 0.0.1
+## 0.0.1 — 2026-05-03
 
 ### Patch Changes
 

@@ -12,6 +12,7 @@ so UI layers can render partial output without losing memoization.
 
 | Package | npm | Use it for | Highlights |
 |---|---|---|---|
+| [`@cacheplane/json-stream`](packages/json-stream) | [![npm](https://img.shields.io/npm/v/@cacheplane/json-stream.svg)](https://www.npmjs.com/package/@cacheplane/json-stream) | JSON arriving a chunk at a time from a model, socket, or tool call | Per-node `partial`/`complete` status, chunk-boundary safe, JSON Pointer lookup, zero dependencies |
 | [`@cacheplane/partial-json`](packages/partial-json) | [![npm](https://img.shields.io/npm/v/@cacheplane/partial-json.svg)](https://www.npmjs.com/package/@cacheplane/partial-json) | JSON streamed from an LLM or any incremental source | Partial strings and numbers, JSON Pointer lookup, push and pull APIs, structural-sharing snapshots |
 | [`@cacheplane/partial-markdown`](packages/partial-markdown) | [![npm](https://img.shields.io/npm/v/@cacheplane/partial-markdown.svg)](https://www.npmjs.com/package/@cacheplane/partial-markdown) | Markdown streamed into chat, agent logs, reports, or AI writing surfaces | Headings, lists, task lists, tables, citations, link references, math, raw HTML, inline formatting, stable AST identity |
 
@@ -90,6 +91,7 @@ for (const block of parser.root?.children ?? []) {
 
 See the package READMEs for full API details:
 
+- [`@cacheplane/json-stream`](packages/json-stream/README.md)
 - [`@cacheplane/partial-json`](packages/partial-json/README.md)
 - [`@cacheplane/partial-markdown`](packages/partial-markdown/README.md)
 
@@ -133,6 +135,7 @@ const value = resolve(state);
 
 ```text
 packages/
+  json-stream/        Published package: @cacheplane/json-stream
   partial-json/       Published package: @cacheplane/partial-json
   partial-markdown/   Published package: @cacheplane/partial-markdown
 apps/                 Reserved for deployable apps
@@ -172,6 +175,11 @@ pnpm build
 Package-scoped commands:
 
 ```bash
+pnpm --filter @cacheplane/json-stream test
+pnpm --filter @cacheplane/json-stream build
+pnpm --filter @cacheplane/json-stream publint
+pnpm --filter @cacheplane/json-stream attw
+
 pnpm --filter @cacheplane/partial-json test
 pnpm --filter @cacheplane/partial-json build
 pnpm --filter @cacheplane/partial-json publint
@@ -207,6 +215,7 @@ publish.
 Packages are versioned and released independently. Releases are tag-routed via
 the publish workflow:
 
+- `json-stream-v0.0.4` publishes `@cacheplane/json-stream@0.0.4`
 - `partial-json-v0.2.1` publishes `@cacheplane/partial-json@0.2.1`
 - `partial-markdown-v0.3.2` publishes `@cacheplane/partial-markdown@0.3.2`
 
@@ -216,6 +225,7 @@ See [`RELEASING.md`](RELEASING.md) for the release process.
 
 - Open issues in the [Cacheplane GitHub repository](https://github.com/cacheplane/cacheplane/issues).
 - Check package changelogs before upgrading:
+  - [`packages/json-stream/CHANGELOG.md`](packages/json-stream/CHANGELOG.md)
   - [`packages/partial-json/CHANGELOG.md`](packages/partial-json/CHANGELOG.md)
   - [`packages/partial-markdown/CHANGELOG.md`](packages/partial-markdown/CHANGELOG.md)
 

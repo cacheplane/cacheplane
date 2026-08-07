@@ -17,6 +17,7 @@ Each package is versioned and released independently.
 
 The publish workflow derives the package directory and version directly from the tag name:
 
+- `json-stream-v0.0.4` → publishes `packages/json-stream` at version `0.0.4`
 - `partial-json-v0.2.1` → publishes `packages/partial-json` at version `0.2.1`
 - `partial-markdown-v0.3.1` → publishes `packages/partial-markdown` at version `0.3.1`
 

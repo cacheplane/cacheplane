@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [partial-json, partial-markdown]
+        package: [json-stream, partial-json, partial-markdown]
     steps:
       - uses: actions/checkout@v6
 

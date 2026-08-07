@@ -1,17 +1,7 @@
 {
   "name": "@cacheplane/json-stream",
   "version": "0.0.3",
-  "description": "Small JSON stream parsing utilities used by Pretable streaming adapters.",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/cacheplane/pretable.git",
-    "directory": "packages/json-stream"
-  },
-  "homepage": "https://pretable.ai/docs/streaming/parsers",
-  "bugs": {
-    "url": "https://github.com/cacheplane/pretable/issues"
-  },
+  "description": "Streaming incremental JSON parser with push/pull APIs, node guards, and JSON Pointer resolution.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
@@ -31,13 +21,42 @@
   },
   "sideEffects": false,
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "lint": "eslint src --ext .ts",
-    "lint:packaging": "publint --strict && attw --pack",
-    "test": "vitest run --passWithNoTests",
-    "typecheck": "tsc -b --pretty false"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "publint": "publint",
+    "attw": "attw --pack ."
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cacheplane/cacheplane.git",
+    "directory": "packages/json-stream"
+  },
+  "homepage": "https://github.com/cacheplane/cacheplane/tree/main/packages/json-stream#readme",
+  "bugs": "https://github.com/cacheplane/cacheplane/issues",
+  "keywords": [
+    "json",
+    "stream",
+    "partial",
+    "parser",
+    "incremental",
+    "llm"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

@@ -1,13 +1,14 @@
-import { defineConfig } from "tsup";
+import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  clean: true,
+  entry: ['src/index.ts'],
+  format: ['esm', 'cjs'],
   dts: true,
-  entry: ["src/index.ts"],
-  format: ["esm", "cjs"],
-  outExtension: ({ format }) => ({
-    js: format === "cjs" ? ".cjs" : ".mjs",
-  }),
+  clean: true,
+  sourcemap: true,
   treeshake: true,
-  tsconfig: "tsconfig.build.json",
+  outDir: 'dist',
+  outExtension({ format }) {
+    return format === 'esm' ? { js: '.mjs' } : { js: '.cjs' };
+  },
 });
