@@ -4,6 +4,13 @@ Releases up to and including `0.0.3` were cut from `cacheplane/pretable`, where
 this package originally lived. Entries below `0.0.3` are the changesets-generated
 history from that repo, preserved verbatim.
 
+## 0.0.4 — 2026-08-07
+
+First release from `cacheplane/cacheplane`, and the first to carry a provenance
+attestation. No source changes from `0.0.3` — the package moved repositories,
+with its history, and now releases through the tag-routed OIDC publish workflow
+alongside `partial-json` and `partial-markdown`.
+
 ## 0.0.3 — 2026-08-07
 
 Version-alignment release, no behavior changes. This package was in a changesets
