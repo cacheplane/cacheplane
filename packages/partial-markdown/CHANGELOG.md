@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.9 — 2026-08-11
+
+### Performance
+
+- Long open paragraphs now avoid repeated generic scalar snapshots and full
+  structural-prefix scans on each plain-text character.
+- Character-streamed block prefixes continue to fall back to the full parser
+  as soon as headings, lists, tables, math, fences, or HTML become decisive.
+
 ## 0.5.8 — 2026-07-11
 
 ### Changed
