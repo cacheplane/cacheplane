@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import { describe, it, expectTypeOf } from 'vitest';
-import type { StreamStatus } from '../types';
+import type { StreamStatus } from '../index';
 
 describe('types', () => {
   it('StreamStatus is a tristate', () => {

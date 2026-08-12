@@ -18,7 +18,7 @@ Runtime and packaging:
 - Node `>=20`
 - TypeScript declarations included
 - ESM and CJS bundled
-- Zero runtime dependencies
+- Uses `@cacheplane/json-stream` as its runtime parser kernel
 - Marked side-effect free
 
 ## 30-Second Example

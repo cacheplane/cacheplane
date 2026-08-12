@@ -20,7 +20,7 @@ export type {
   StreamError,
   StreamState,
   StringNode,
-} from "./types";
+} from "@cacheplane/json-stream";
 
 export {
   isArrayNode,
@@ -30,26 +30,9 @@ export {
   isNumberNode,
   isObjectNode,
   isStringNode,
-} from "./guards";
+} from "@cacheplane/json-stream";
 
-import { createInternal } from "./create";
-import { pushInternal } from "./push";
-import { finishInternal } from "./finish";
-import type { InternalState, StreamState } from "./types";
-
-export function create(): StreamState {
-  return createInternal();
-}
-
-export function push(state: StreamState, chunk: string): StreamState {
-  return pushInternal(state as InternalState, chunk);
-}
-
-export function finish(state: StreamState): StreamState {
-  return finishInternal(state as InternalState);
-}
-
-export { resolve } from "./resolve";
+export { create, finish, push, resolve } from "@cacheplane/json-stream";
 
 // ── Push-style (parser + events) ─────────────────────────────────────────────
 export type {

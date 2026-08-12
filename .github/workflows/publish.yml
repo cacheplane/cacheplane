@@ -44,9 +44,11 @@ jobs:
           # tag format: <pkg>-v<version>, e.g. partial-json-v0.2.1
           PKG="${TAG%-v*}"
           VERSION="${TAG##*-v}"
-          echo "name=$PKG" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "dir=packages/$PKG" >> "$GITHUB_OUTPUT"
+          {
+            echo "name=$PKG"
+            echo "version=$VERSION"
+            echo "dir=packages/$PKG"
+          } >> "$GITHUB_OUTPUT"
           echo "Resolved tag $TAG -> dir=packages/$PKG version=$VERSION"
 
       - name: Verify version matches package.json
@@ -58,12 +60,26 @@ jobs:
           fi
 
       - name: Build target package
-        run: pnpm --filter "@cacheplane/${{ steps.pkg.outputs.name }}" build
+        run: |
+          pnpm --filter "@cacheplane/${{ steps.pkg.outputs.name }}^..." build
+          pnpm --filter "@cacheplane/${{ steps.pkg.outputs.name }}" build
+
+      - name: Pack target package
+        id: pack
+        working-directory: ${{ steps.pkg.outputs.dir }}
+        run: |
+          TARBALL="$RUNNER_TEMP/cacheplane-${{ steps.pkg.outputs.name }}-${{ steps.pkg.outputs.version }}.tgz"
+          pnpm pack --pack-destination "$RUNNER_TEMP"
+          PACKED_MANIFEST=$(tar -xOf "$TARBALL" package/package.json)
+          if echo "$PACKED_MANIFEST" | grep -q 'workspace:'; then
+            echo "Packed package contains an unresolved workspace dependency"
+            exit 1
+          fi
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
 
       # Use npm publish (not pnpm publish): the OIDC trusted-publishing
       # token exchange is implemented in npm CLI 11.5.1+, not in pnpm 9.
       - name: Publish to npm with OIDC trusted publishing
-        working-directory: ${{ steps.pkg.outputs.dir }}
-        run: npm publish --access public --provenance --loglevel verbose
+        run: npm publish "${{ steps.pack.outputs.tarball }}" --access public --provenance --loglevel verbose
         env:
           NPM_CONFIG_PROVENANCE: 'true'

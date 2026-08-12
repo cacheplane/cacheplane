@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.2 — 2026-08-11
+
+### Changed
+
+- The immutable parser API now delegates to `@cacheplane/json-stream`, which is
+  the single JSON parsing kernel shared by both Cacheplane JSON packages.
+- The push-style parser, event ordering, stable node identities, structural
+  sharing, and existing public exports remain unchanged.
+
+### Performance
+
+- Removed the duplicate parser implementation from the package bundle. The
+  push-style facade now ships as a smaller layer over `@cacheplane/json-stream`.
+
 ## 0.2.1 — 2026-05-06
 
 Infrastructure-only release. No behavior changes; verifies the monorepo's

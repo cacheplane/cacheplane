@@ -26,6 +26,9 @@ jobs:
 
       - run: pnpm typecheck
 
+      - name: Test benchmark infrastructure
+        run: node --test tools/bench-json.test.mjs
+
   package:
     name: Package — ${{ matrix.package }}
     runs-on: ubuntu-latest
@@ -46,6 +49,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Build package dependencies
+        run: pnpm --filter "@cacheplane/${{ matrix.package }}^..." build
+
       - name: Test with coverage
         run: pnpm --filter @cacheplane/${{ matrix.package }} run test:coverage
 
@@ -57,6 +63,10 @@ jobs:
 
       - name: Check types resolution (attw)
         run: pnpm --filter @cacheplane/${{ matrix.package }} attw
+
+      - name: Check partial-json package boundary
+        if: matrix.package == 'partial-json'
+        run: pnpm check:partial-json-package
 
       - uses: actions/upload-artifact@v7
         if: always()
