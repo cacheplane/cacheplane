@@ -347,18 +347,15 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
       return null;
     }
 
-    const combinedLine = state.lineBuffer + chunk;
-    if (wouldReinterpretTopLevelParagraph(combinedLine, chunk, state)) return null;
+    if (wouldReinterpretTopLevelParagraph(state.lineBuffer, chunk, state)) return null;
 
     return text;
   }
 
   function updateIncrementalPlainText(entry: PublicEntry, delta: string): ParseEvent[] {
-    const ast = { ...entry.visible.ast, text: state.lineBuffer } as AstNode;
-    const scalars = snapshotScalars(ast);
-    applyScalars(entry.node, scalars, entry.scalars);
-    entry.visible.ast = ast;
-    entry.scalars = scalars;
+    entry.visible.ast = { ...entry.visible.ast, text: state.lineBuffer } as AstNode;
+    (entry.node as MarkdownNode & { text: string }).text = state.lineBuffer;
+    entry.scalars.text = state.lineBuffer;
     return [{ type: 'value-updated', node: entry.node, delta }];
   }
 
@@ -479,13 +476,32 @@ function positionKey(node: VisibleNode): string {
   return `${node.parserId}:${node.parentParserId ?? 'root'}:${node.index ?? 'root'}`;
 }
 
-function wouldReinterpretTopLevelParagraph(line: string, chunk: string, state: InternalState): boolean {
+function wouldReinterpretTopLevelParagraph(
+  lineBuffer: string,
+  chunk: string,
+  state: InternalState,
+): boolean {
+  let offset = 0;
+  while (offset < lineBuffer.length && offset < 4 && lineBuffer[offset] === ' ') offset += 1;
+
+  const prefix = lineBuffer[offset];
+  if (prefix === undefined || offset === 4 || prefix === '\t') {
+    const line = lineBuffer + chunk;
+    return INDENTED_CODE_RE.test(line) || wouldMatchBlockPrefix(line, chunk, state);
+  }
+
+  if (prefix === '|' && !chunk.includes('|')) return false;
+  if (!'#>0123456789-*+`~|[$\\<'.includes(prefix)) return false;
+
+  return wouldMatchBlockPrefix(lineBuffer + chunk, chunk, state);
+}
+
+function wouldMatchBlockPrefix(line: string, chunk: string, state: InternalState): boolean {
   return (
     ATX_HEADING_RE.test(line) ||
     BLOCKQUOTE_PREFIX_RE.test(line) ||
     ORDERED_LIST_MARKER_RE.test(line) ||
     UNORDERED_LIST_MARKER_RE.test(line) ||
-    INDENTED_CODE_RE.test(line) ||
     FENCE_OPEN_RE.test(line) ||
     THEMATIC_BREAK_RE.test(line) ||
     (chunk.includes('|') && TABLE_HEADER_PREFIX_RE.test(line)) ||

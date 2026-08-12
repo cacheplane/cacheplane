@@ -115,6 +115,25 @@ describe('createPartialMarkdownParser', () => {
     expect(table.root!.children[0]?.type).toBe('table');
   });
 
+  it.each([
+    ['# heading', 'heading'],
+    ['> quote', 'blockquote'],
+    ['1. item', 'list'],
+    ['- item', 'list'],
+    ['```ts', 'code-block'],
+    ['---', 'thematic-break'],
+    ['| A |', 'table'],
+    ['$$math$$', 'math-display'],
+    ['\\[math\\]', 'math-display'],
+    ['<div>', 'html-block'],
+  ])('reinterprets a character-streamed %s prefix as %s', (input, expectedType) => {
+    const parser = createPartialMarkdownParser();
+
+    for (const character of input) parser.push(character);
+
+    expect(parser.root?.children[0]?.type).toBe(expectedType);
+  });
+
   it('falls back when prior literal text can become an inline construct', () => {
     const p = createPartialMarkdownParser();
     p.push('*');
