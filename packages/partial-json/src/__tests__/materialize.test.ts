@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: MIT
 import { describe, it, expect } from 'vitest';
-import { createPartialJsonParser } from '../parser';
-import { materialize } from '../materialize';
-import type { JsonArrayNode, JsonObjectNode, JsonStringNode } from '../types';
+import {
+  createPartialJsonParser,
+  materialize,
+  type JsonArrayNode,
+  type JsonObjectNode,
+  type JsonStringNode,
+} from '../index';
 
 describe('materialize', () => {
   describe('basic materialization', () => {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import { describe, it, expect } from 'vitest';
-import { createPartialJsonParser } from '../parser';
+import { createPartialJsonParser } from '../index';
 import type {
   JsonStringNode,
   JsonNumberNode,
@@ -9,7 +9,7 @@ import type {
   JsonObjectNode,
   JsonArrayNode,
   ParseEvent,
-} from '../types';
+} from '../index';
 
 describe('createPartialJsonParser', () => {
   describe('strings', () => {

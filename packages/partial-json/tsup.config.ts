@@ -7,6 +7,7 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   treeshake: true,
+  external: ['@cacheplane/json-stream'],
   outDir: 'dist',
   outExtension({ format }) {
     return format === 'esm' ? { js: '.mjs' } : { js: '.cjs' };

@@ -12,9 +12,7 @@
 // `value`, `raw`, container `children`) are updated in-place on that
 // instance so consumers can hold long-lived references.
 
-import { createInternal } from './create';
-import { pushInternal } from './push';
-import { finishInternal } from './finish';
+import { create, finish, push } from '@cacheplane/json-stream';
 import type {
   AstNode,
   ArrayNode,
@@ -22,7 +20,8 @@ import type {
   StringNode,
   NumberNode,
   StreamState,
-  InternalState,
+} from '@cacheplane/json-stream';
+import type {
   JsonNode,
   JsonObjectNode,
   JsonArrayNode,
@@ -60,7 +59,7 @@ function unescapeJsonPointer(segment: string): string {
 }
 
 export function createPartialJsonParser(): PartialJsonParser {
-  let state: StreamState = createInternal();
+  let state: StreamState = create();
   // Map from AstNode id -> the JsonNode instance we created for it.
   const nodeById = new Map<number, JsonNode>();
   // Snapshot of each node's last-observed shape, keyed by AstNode id.
@@ -159,7 +158,7 @@ export function createPartialJsonParser(): PartialJsonParser {
     }
   }
 
-  function diffStates(before: StreamState, after: StreamState): ParseEvent[] {
+  function diffStates(after: StreamState): ParseEvent[] {
     const created: ParseEvent[] = [];
     const valueUpdates: ParseEvent[] = [];
     const completedIds: { id: number; event: ParseEvent }[] = [];
@@ -292,14 +291,12 @@ export function createPartialJsonParser(): PartialJsonParser {
   return {
     push(chunk: string): ParseEvent[] {
       if (chunk.length === 0) return [];
-      const before = state;
-      state = pushInternal(state as InternalState, chunk);
-      return diffStates(before, state);
+      state = push(state, chunk);
+      return diffStates(state);
     },
     finish(): ParseEvent[] {
-      const before = state;
-      state = finishInternal(state as InternalState);
-      return diffStates(before, state);
+      state = finish(state);
+      return diffStates(state);
     },
     get root(): JsonNode | null {
       if (state.rootId === null) return null;
