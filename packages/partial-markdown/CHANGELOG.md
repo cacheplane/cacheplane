@@ -8,6 +8,8 @@
   autolink literals, including inside citation definitions.
 - Trailing sentence punctuation and unmatched closing parentheses remain
   outside autolinks.
+- `resolve(state)` now includes the optimistic open-line projection while
+  leaving the immutable continuation state untouched.
 
 ## 0.5.9 — 2026-08-11
 

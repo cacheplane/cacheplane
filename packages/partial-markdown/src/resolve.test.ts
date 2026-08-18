@@ -1,11 +1,17 @@
 // SPDX-License-Identifier: MIT
 import { describe, it, expect } from 'vitest';
-import { create, push, finish, resolve } from './index';
+import { create, push, finish, materialize, resolve } from './index';
 import { createInternal } from './create';
 import { allocId, appendNode, appendChild } from './internals';
 import { handleBlockLine } from './handlers/block';
 import { finishInternal } from './finish';
-import type { DocumentAstNode, MarkdownDocumentNode, HardBreakAstNode, ParagraphAstNode } from './types';
+import type {
+  DocumentAstNode,
+  HardBreakAstNode,
+  MarkdownDocumentNode,
+  MarkdownParagraphNode,
+  ParagraphAstNode,
+} from './types';
 
 describe('resolve', () => {
   it('returns null when nothing has been parsed', () => {
@@ -19,6 +25,42 @@ describe('resolve', () => {
     s = finish(s);
     const root = resolve(s);
     expect(root?.type).toBe('document');
+  });
+
+  it('projects an open line without mutating the continuation state', () => {
+    const initial = create();
+    const state = push(initial, 'streaming paragraph');
+    const committedNodes = state.nodes;
+
+    const root = resolve(state) as MarkdownDocumentNode;
+
+    expect(root.children[0]).toMatchObject({
+      type: 'paragraph',
+      status: 'streaming',
+    });
+    expect(
+      (root.children[0] as MarkdownParagraphNode).children[0],
+    ).toMatchObject({
+      type: 'text',
+      status: 'streaming',
+      text: 'streaming paragraph',
+    });
+    expect(state.nodes).toBe(committedNodes);
+    expect(state.nodes).toHaveLength(1);
+  });
+
+  it('resolves the same open-line projection across chunk boundaries', () => {
+    const whole = push(create(), '# streaming heading');
+    const chunked = push(push(create(), '# streaming'), ' heading');
+
+    const wholeRoot = resolve(whole);
+    const chunkedRoot = resolve(chunked);
+
+    expect((wholeRoot as MarkdownDocumentNode).children[0]).toMatchObject({
+      type: 'heading',
+      status: 'streaming',
+    });
+    expect(materialize(wholeRoot)).toEqual(materialize(chunkedRoot));
   });
 
   it('document.children carries the parsed blocks', () => {
