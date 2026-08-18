@@ -97,6 +97,20 @@ describe('handleBlockLine — citation definitions', () => {
     expect(doc.children).toEqual([]);
   });
 
+  it('parses autolink literals in citation definition bodies', () => {
+    let s = freshDoc();
+
+    s = handleBlockLine(s, '[^src1]: Source title https://example.com');
+
+    const definition = s.citationDefs.get('src1');
+    const children = definition?.childAstIds.map((id) => s.nodes[id]);
+    expect(children?.find((node) => node?.kind === 'autolink')).toMatchObject({
+      kind: 'autolink',
+      text: 'https://example.com',
+      url: 'https://example.com',
+    });
+  });
+
   it('flips resolved=true on prior unresolved refs when matching def arrives', () => {
     // Arrange: ref first, then def.
     let s = freshDoc();

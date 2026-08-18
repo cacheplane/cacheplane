@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.10 — 2026-08-18
+
+### Added
+
+- Plain `http://`, `https://`, `www.`, and email text now parses as GFM-style
+  autolink literals, including inside citation definitions.
+- Trailing sentence punctuation and unmatched closing parentheses remain
+  outside autolinks.
+
 ## 0.5.9 — 2026-08-11
 
 ### Performance

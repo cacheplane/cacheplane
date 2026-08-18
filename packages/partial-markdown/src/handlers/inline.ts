@@ -228,6 +228,23 @@ export function parseInline(state: InternalState, parentId: number, rawLine: str
       }
     }
 
+    // GFM autolink literal: https://..., www...., or an email address.
+    const autolinkLiteral = matchAutolinkLiteral(line, cursor.i);
+    if (autolinkLiteral) {
+      s = appendInlineNode(
+        s,
+        parentId,
+        makeAutolink(
+          s,
+          parentId,
+          autolinkLiteral.url,
+          autolinkLiteral.text,
+        ),
+      );
+      cursor.i = autolinkLiteral.endIndex;
+      continue;
+    }
+
     // Plain text run.
     const textRun = matchTextRun(line, cursor.i, lastRBracket);
     s = appendInlineNode(s, parentId, makeText(s, parentId, textRun.text));
@@ -356,6 +373,49 @@ function matchAutolink(line: string, start: number): { url: string; endIndex: nu
   return { url, endIndex: i + 1 };
 }
 
+function matchAutolinkLiteral(
+  line: string,
+  start: number,
+): { text: string; url: string; endIndex: number } | null {
+  if (start > 0 && !/\s|[([{"'`]/.test(line[start - 1] ?? '')) {
+    return null;
+  }
+
+  const match =
+    /^(https?:\/\/\S+|www\.\S+|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/.exec(
+      line.slice(start),
+    );
+  if (!match) return null;
+
+  const text = trimAutolinkTrailingPunctuation(match[1]!);
+  if (text.length === 0) return null;
+
+  const url = text.startsWith('http://') || text.startsWith('https://')
+    ? text
+    : text.startsWith('www.')
+      ? `https://${text}`
+      : `mailto:${text}`;
+  return { text, url, endIndex: start + text.length };
+}
+
+function trimAutolinkTrailingPunctuation(value: string): string {
+  let end = value.length;
+  while (end > 0 && /[.,;:!?]/.test(value[end - 1] ?? '')) {
+    end -= 1;
+  }
+
+  let candidate = value.slice(0, end);
+  if (candidate.endsWith(')')) {
+    const openCount = (candidate.match(/\(/g) ?? []).length;
+    const closeCount = (candidate.match(/\)/g) ?? []).length;
+    if (closeCount > openCount) {
+      candidate = candidate.slice(0, -1);
+    }
+  }
+
+  return candidate;
+}
+
 function matchTextRun(
   line: string,
   start: number,
@@ -365,6 +425,7 @@ function matchTextRun(
   let text = '';
   while (i < line.length) {
     const c = line[i];
+    if (i > start && matchAutolinkLiteral(line, i)) break;
     if (
       c === '*' || c === '_' || c === '~' || c === '`' ||
       c === '<' || c === '$' ||
@@ -432,9 +493,21 @@ function makeHtmlInline(state: InternalState, parentId: number, raw: string): No
   return { state: s1, node };
 }
 
-function makeAutolink(state: InternalState, parentId: number, url: string): NodeBuild {
+function makeAutolink(
+  state: InternalState,
+  parentId: number,
+  url: string,
+  text = url,
+): NodeBuild {
   const [s1, id] = allocId(state);
-  const node: AutolinkAstNode = { id, kind: 'autolink', parentId, status: 'complete', url, text: url };
+  const node: AutolinkAstNode = {
+    id,
+    kind: 'autolink',
+    parentId,
+    status: 'complete',
+    url,
+    text,
+  };
   return { state: s1, node };
 }
 
