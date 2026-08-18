@@ -18,6 +18,7 @@ export function createInternal(options?: PartialMarkdownParserOptions): Internal
     codeFenceMarker: null,
     textBuffer: '',
     currentNodeId: null,
+    pendingParagraphBreak: null,
     options: {
       math: {
         dollar: options?.math?.dollar ?? true,

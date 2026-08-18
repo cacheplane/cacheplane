@@ -461,7 +461,7 @@ function openParagraph(state: InternalState, line: string): InternalState {
     id: paraId, kind: 'paragraph', parentId, status: 'streaming', children: [],
   };
   let s = appendChild(appendNode(s1, para), parentId, paraId);
-  s = parseInline(s, paraId, line);
+  s = parseParagraphLine(s, paraId, line);
   return { ...s, currentNodeId: paraId };
 }
 
@@ -476,9 +476,36 @@ function appendLineToParagraph(state: InternalState, paraId: number, line: strin
   let s = state;
   const [s1, sbId] = allocId(s);
   s = appendChild(appendNode(s1, {
-    id: sbId, kind: 'soft-break', parentId: paraId, status: 'complete',
+    id: sbId,
+    kind: state.pendingParagraphBreak ?? 'soft-break',
+    parentId: paraId,
+    status: 'complete',
   }), paraId, sbId);
-  return parseInline(s, paraId, line);
+  return parseParagraphLine(s, paraId, line);
+}
+
+function parseParagraphLine(state: InternalState, paraId: number, line: string): InternalState {
+  const trailingSpaces = / {2,}$/.exec(line);
+  if (trailingSpaces) {
+    const content = line.slice(0, -trailingSpaces[0].length);
+    return {
+      ...parseInline(state, paraId, content),
+      pendingParagraphBreak: 'hard-break',
+    };
+  }
+
+  const trailingBackslashes = /\\+$/.exec(line)?.[0].length ?? 0;
+  if (trailingBackslashes % 2 === 1) {
+    return {
+      ...parseInline(state, paraId, line.slice(0, -1)),
+      pendingParagraphBreak: 'hard-break',
+    };
+  }
+
+  return {
+    ...parseInline(state, paraId, line),
+    pendingParagraphBreak: 'soft-break',
+  };
 }
 
 export function closeOpenParagraph(
@@ -495,7 +522,7 @@ export function closeOpenParagraph(
       const child = s.nodes[childId];
       if (child && child.status !== 'complete') s = setStatus(s, childId, 'complete');
     }
-    s = { ...s, currentNodeId: null };
+    s = { ...s, currentNodeId: null, pendingParagraphBreak: null };
   }
   // If a blockquote is open at the top of the stack, close it as well.
   const topId = s.stack[s.stack.length - 1];
@@ -759,7 +786,9 @@ function openParagraphInside(state: InternalState, parentId: number, line: strin
   };
   let s = appendChild(appendNode(s1, para), parentId, paraId);
   if (line.length > 0) {
-    s = parseInline(s, paraId, line);
+    s = parseParagraphLine(s, paraId, line);
+  } else {
+    s = { ...s, pendingParagraphBreak: 'soft-break' };
   }
   return { ...s, currentNodeId: paraId };
 }

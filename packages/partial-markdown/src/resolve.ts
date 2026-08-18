@@ -11,22 +11,39 @@ import type {
   CitationDefinition,
   LinkDefinition,
 } from './types';
+import { handleBlockLine } from './handlers/block';
 
 /**
  * Build a tree-shaped MarkdownNode graph from the flat AstNode array.
  * Walks once; allocates one MarkdownNode per AstNode reached from the root.
  */
 export function resolve(state: StreamState): MarkdownNode | null {
-  if (state.rootId === null) return null;
+  const committed = state as InternalState;
+  if (committed.rootId === null) return null;
+  const source = projectOpenLine(committed);
   const built = new Map<number, MarkdownNode>();
-  const root = buildNode(state.nodes, state.rootId, null, null, built) as MarkdownDocumentNode;
+  const root = buildNode(
+    source.nodes,
+    source.rootId!,
+    null,
+    null,
+    built,
+    committed.nodes,
+  ) as MarkdownDocumentNode;
 
   // Populate citations sidecar from the internal registry on the state.
-  const citationDefs = (state as InternalState).citationDefs;
+  const citationDefs = source.citationDefs;
   if (citationDefs && citationDefs.size > 0) {
     for (const [refId, def] of citationDefs) {
       const children = def.childAstIds.map((cid, i) => {
-        const child = buildNode(state.nodes, cid, null, i, built);
+        const child = buildNode(
+          source.nodes,
+          cid,
+          null,
+          i,
+          built,
+          committed.nodes,
+        );
         return child as MarkdownInlineNode;
       });
       root.citations.set(refId, {
@@ -38,7 +55,7 @@ export function resolve(state: StreamState): MarkdownNode | null {
     }
   }
 
-  const linkDefs = (state as InternalState).linkDefs;
+  const linkDefs = source.linkDefs;
   if (linkDefs && linkDefs.size > 0) {
     for (const [refId, def] of linkDefs) {
       root.linkDefinitions.set(refId, {
@@ -54,18 +71,37 @@ export function resolve(state: StreamState): MarkdownNode | null {
   return root;
 }
 
+function projectOpenLine(state: InternalState): InternalState {
+  const needsPreview =
+    !state.complete &&
+    (state.lineBuffer.length > 0 || state.tablePending !== null);
+  if (!needsPreview) return state;
+
+  return handleBlockLine(
+    {
+      ...state,
+      lineBuffer: '',
+      optimisticInline: true,
+      optimisticBlock: true,
+    },
+    state.lineBuffer,
+  );
+}
+
 function buildNode(
   nodes: AstNode[],
   id: number,
   parent: MarkdownNode | null,
   index: number | null,
   cache: Map<number, MarkdownNode>,
+  committedNodes: AstNode[],
 ): MarkdownNode {
   const cached = cache.get(id);
   if (cached) return cached;
 
   const ast = nodes[id]!;
-  const status: StreamStatus = ast.status;
+  const status: StreamStatus =
+    ast !== committedNodes[id] ? 'streaming' : ast.status;
 
   let node: MarkdownNode;
   switch (ast.kind) {
@@ -115,7 +151,9 @@ function buildNode(
       }
       cache.set(id, partial);
       const childAstIds = (ast as any).children as number[];
-      partial.children = childAstIds.map((cid, i) => buildNode(nodes, cid, partial, i, cache));
+      partial.children = childAstIds.map((cid, i) =>
+        buildNode(nodes, cid, partial, i, cache, committedNodes),
+      );
       node = partial as MarkdownNode;
       break;
     }
@@ -135,7 +173,9 @@ function buildNode(
         children: [],
       };
       cache.set(id, partial);
-      partial.children = ast.children.map((cid, i) => buildNode(nodes, cid, partial, i, cache));
+      partial.children = ast.children.map((cid, i) =>
+        buildNode(nodes, cid, partial, i, cache, committedNodes),
+      );
       node = partial as MarkdownNode;
       break;
     }

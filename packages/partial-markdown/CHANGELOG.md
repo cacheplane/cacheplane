@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.10 — 2026-08-18
+
+### Added
+
+- Plain `http://`, `https://`, `www.`, and email text now parses as GFM-style
+  autolink literals, including inside citation definitions.
+- Trailing sentence punctuation and unmatched closing parentheses remain
+  outside autolinks.
+- `resolve(state)` now includes the optimistic open-line projection while
+  leaving the immutable continuation state untouched.
+- Paragraph continuations now emit `hard-break` nodes for two-space and
+  unescaped-backslash line endings, with marker characters removed from text.
+
 ## 0.5.9 — 2026-08-11
 
 ### Performance

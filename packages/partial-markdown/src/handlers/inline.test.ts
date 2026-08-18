@@ -99,6 +99,53 @@ describe('parseInline — links', () => {
       .find(n => n?.kind === 'autolink') as any;
     expect(al.url).toBe('https://example.com');
   });
+
+  it.each([
+    ['https://example.com/docs', 'https://example.com/docs'],
+    ['https://user@example.com/docs', 'https://user@example.com/docs'],
+    ['www.example.com/docs', 'https://www.example.com/docs'],
+    ['docs@example.com', 'mailto:docs@example.com'],
+  ])('parses autolink literal %s', (input, expectedUrl) => {
+    const { state, paraId } = withParagraph();
+
+    const out = parseInline(state, paraId, `visit ${input}`);
+
+    const para = out.nodes[paraId] as ParagraphAstNode;
+    const autolink = para.children
+      .map((id) => out.nodes[id])
+      .find((node) => node?.kind === 'autolink');
+    expect(autolink).toMatchObject({
+      kind: 'autolink',
+      text: input,
+      url: expectedUrl,
+    });
+  });
+
+  it('excludes trailing punctuation from an autolink literal', () => {
+    const { state, paraId } = withParagraph();
+
+    const out = parseInline(state, paraId, 'visit https://example.com/docs).');
+
+    const para = out.nodes[paraId] as ParagraphAstNode;
+    const children = para.children.map((id) => out.nodes[id]);
+    expect(children.find((node) => node?.kind === 'autolink')).toMatchObject({
+      kind: 'autolink',
+      text: 'https://example.com/docs',
+      url: 'https://example.com/docs',
+    });
+    expect(children.at(-1)).toMatchObject({ kind: 'text', text: ').' });
+  });
+
+  it('does not parse an autolink literal inside a word', () => {
+    const { state, paraId } = withParagraph();
+
+    const out = parseInline(state, paraId, 'prefixhttps://example.com');
+
+    const para = out.nodes[paraId] as ParagraphAstNode;
+    expect(para.children.map((id) => out.nodes[id]?.kind)).not.toContain(
+      'autolink',
+    );
+  });
 });
 
 describe('parseInline — graceful malformed input', () => {

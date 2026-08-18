@@ -1,11 +1,6 @@
 // SPDX-License-Identifier: MIT
 import { describe, it, expect } from 'vitest';
 import { createPartialMarkdownParser, materialize } from './index';
-import { createInternal } from './create';
-import { allocId, appendNode, appendChild } from './internals';
-import { finishInternal } from './finish';
-import { resolve } from './resolve';
-import type { DocumentAstNode, ParagraphAstNode, HardBreakAstNode } from './types';
 
 
 describe('materialize', () => {
@@ -192,25 +187,13 @@ describe('materialize — computeVersion coverage for leaf node types', () => {
     expect(sb).toBeDefined();
   });
 
-  it('materializes hard-break nodes injected via state (covers hard-break branch)', () => {
-    // hard-break is in the AST type but not currently emitted by the inline tokenizer.
-    // We exercise materialize's hard-break branch by injecting a hard-break node
-    // manually into a resolved tree and calling materialize on it.
-    let s = createInternal();
-    const [s1, docId] = allocId(s);
-    s = { ...s1, rootId: docId, stack: [docId] };
-    const doc: DocumentAstNode = { id: docId, kind: 'document', parentId: null, status: 'streaming', children: [] };
-    s = appendNode(s, doc);
-    const [s2, paraId] = allocId(s); s = s2;
-    const para: ParagraphAstNode = { id: paraId, kind: 'paragraph', parentId: docId, status: 'streaming', children: [] };
-    s = appendNode(s, para); s = appendChild(s, docId, paraId);
-    const [s3, hbId] = allocId(s); s = s3;
-    const hb: HardBreakAstNode = { id: hbId, kind: 'hard-break', parentId: paraId, status: 'complete' };
-    s = appendNode(s, hb); s = appendChild(s, paraId, hbId);
-    s = finishInternal(s);
-    const root = resolve(s) as any;
-    const snap = materialize(root);
+  it('materializes parsed hard-break nodes', () => {
+    const p = createPartialMarkdownParser();
+    p.push('line one  \nline two\n');
+    p.finish();
+
+    const snap = materialize(p.root);
     const snapPara = (snap as any).children[0];
-    expect(snapPara.children[0].type).toBe('hard-break');
+    expect(snapPara.children[1].type).toBe('hard-break');
   });
 });

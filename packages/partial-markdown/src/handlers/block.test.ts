@@ -138,6 +138,44 @@ describe('handleBlockLine — paragraph', () => {
     expect(paras).toHaveLength(1);
   });
 
+  it('creates a hard break and removes two trailing spaces before a continuation line', () => {
+    let s = freshState();
+    s = handleBlockLine(s, 'Line one.  ');
+    s = handleBlockLine(s, 'Line two.');
+    const para = s.nodes.find(n => n.kind === 'paragraph') as DocumentAstNode;
+    const children = para.children.map(id => s.nodes[id]);
+
+    expect(children.map(node => node?.kind)).toEqual(['text', 'hard-break', 'text']);
+    expect(children[0]).toMatchObject({ kind: 'text', text: 'Line one.' });
+  });
+
+  it('creates a hard break and removes an unescaped trailing backslash', () => {
+    let s = freshState();
+    s = handleBlockLine(s, 'Line one.\\');
+    s = handleBlockLine(s, 'Line two.');
+    const para = s.nodes.find(n => n.kind === 'paragraph') as DocumentAstNode;
+    const children = para.children.map(id => s.nodes[id]);
+
+    expect(children.map(node => node?.kind)).toEqual(['text', 'hard-break', 'text']);
+    expect(children[0]).toMatchObject({ kind: 'text', text: 'Line one.' });
+  });
+
+  it('keeps an escaped trailing backslash and creates a soft break', () => {
+    let s = freshState();
+    s = handleBlockLine(s, 'Line one.\\\\');
+    s = handleBlockLine(s, 'Line two.');
+    const para = s.nodes.find(n => n.kind === 'paragraph') as DocumentAstNode;
+    const children = para.children.map(id => s.nodes[id]);
+    const breakIndex = children.findIndex(node => node?.kind === 'soft-break');
+    const firstLine = children
+      .slice(0, breakIndex)
+      .map(node => node?.kind === 'text' ? node.text : '')
+      .join('');
+
+    expect(children.some(node => node?.kind === 'hard-break')).toBe(false);
+    expect(firstLine).toBe('Line one.\\');
+  });
+
   it('a blank line closes the paragraph', () => {
     let s = freshState();
     s = handleBlockLine(s, 'A para.');
