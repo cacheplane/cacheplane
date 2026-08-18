@@ -7,7 +7,6 @@ import { handleBlockLine } from './handlers/block';
 import { finishInternal } from './finish';
 import type {
   DocumentAstNode,
-  HardBreakAstNode,
   MarkdownDocumentNode,
   MarkdownParagraphNode,
   ParagraphAstNode,
@@ -200,28 +199,14 @@ describe('resolve — soft-break and hard-break via buildNode', () => {
     expect(sb.type).toBe('soft-break');
   });
 
-  it('resolves a manually-built hard-break node via resolve()', () => {
-    // hard-break is in the AST but not emitted by the inline tokenizer yet.
-    // Exercise the buildNode 'hard-break' case directly.
-    let s = createInternal();
-    const [s1, docId] = allocId(s);
-    s = { ...s1, rootId: docId, stack: [docId] };
-    const doc: DocumentAstNode = {
-      id: docId, kind: 'document', parentId: null, status: 'streaming', children: [],
-    };
-    s = appendNode(s, doc);
-    const [s2, paraId] = allocId(s); s = s2;
-    const para: ParagraphAstNode = {
-      id: paraId, kind: 'paragraph', parentId: docId, status: 'streaming', children: [],
-    };
-    s = appendNode(s, para); s = appendChild(s, docId, paraId);
-    const [s3, hbId] = allocId(s); s = s3;
-    const hbAst: HardBreakAstNode = { id: hbId, kind: 'hard-break', parentId: paraId, status: 'complete' };
-    s = appendNode(s, hbAst); s = appendChild(s, paraId, hbId);
-    s = finishInternal(s);
+  it('resolves parsed hard-break nodes', () => {
+    let s = create();
+    s = push(s, 'First line  \nSecond line');
+    s = finish(s);
+
     const root = resolve(s) as any;
     const paraResolved = root.children[0] as any;
-    expect(paraResolved.children[0].type).toBe('hard-break');
+    expect(paraResolved.children[1].type).toBe('hard-break');
   });
 });
 

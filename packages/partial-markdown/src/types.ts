@@ -344,6 +344,8 @@ export interface InternalState extends StreamState {
   textBuffer: string;
   /** Active node id at the deepest level of the parser, if any. */
   currentNodeId: number | null;
+  /** Separator to emit if the open paragraph receives another line. */
+  pendingParagraphBreak: 'soft-break' | 'hard-break' | null;
   options: ResolvedParserOptions;
   /**
    * Internal: when true, the inline parser renders unterminated emphasis /

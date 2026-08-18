@@ -10,6 +10,8 @@
   outside autolinks.
 - `resolve(state)` now includes the optimistic open-line projection while
   leaving the immutable continuation state untouched.
+- Paragraph continuations now emit `hard-break` nodes for two-space and
+  unescaped-backslash line endings, with marker characters removed from text.
 
 ## 0.5.9 — 2026-08-11
 
