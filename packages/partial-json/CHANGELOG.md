@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3 — 2026-09-01
+
+### Added
+
+- Re-exported `StreamErrorCode` alongside the immutable parser types from
+  `@cacheplane/json-stream`.
+
 ## 0.2.2 — 2026-08-11
 
 ### Changed

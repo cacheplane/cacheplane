@@ -4,6 +4,17 @@ Releases up to and including `0.0.3` were cut from `cacheplane/pretable`, where
 this package originally lived. Entries below `0.0.3` are the changesets-generated
 history from that repo, preserved verbatim.
 
+## 0.0.5 — 2026-09-01
+
+### Added
+
+- Added the public `StreamErrorCode` union and required `code` field on
+  `StreamError`, with stable `INVALID_SYNTAX`, `UNEXPECTED_END`, and
+  `TRAILING_CONTENT` categories.
+- Parser error states retain their structured code across later `push()` and
+  `finish()` calls. Human-readable messages remain diagnostic rather than a
+  control-flow contract.
+
 ## 0.0.4 — 2026-08-07
 
 First release from `cacheplane/cacheplane`, and the first to carry a provenance
