@@ -23,7 +23,11 @@ export function finishInternal(state: InternalState): InternalState {
         const node = s.nodes[nodeId] as { buffer: string };
         const buf = node.buffer;
         if (!NUMBER_RE.test(buf)) {
-          return toErrorState(s, `Invalid number at end of input: "${buf}"`);
+          return toErrorState(
+            s,
+            "INVALID_SYNTAX",
+            `Invalid number at end of input: "${buf}"`,
+          );
         }
         const value = parseFloat(buf);
         const s1 = closePrimitive(s, nodeId, value);
@@ -33,26 +37,42 @@ export function finishInternal(state: InternalState): InternalState {
       }
 
       case "LiteralValue":
-        return toErrorState(s, "Unexpected end of input while parsing literal");
+        return toErrorState(
+          s,
+          "UNEXPECTED_END",
+          "Unexpected end of input while parsing literal",
+        );
 
       case "StringValue":
-        return toErrorState(s, "Unexpected end of input while parsing string");
+        return toErrorState(
+          s,
+          "UNEXPECTED_END",
+          "Unexpected end of input while parsing string",
+        );
 
       case "Value":
         if (s.rootId === null) {
-          return toErrorState(s, "Unexpected end of input: no value");
+          return toErrorState(
+            s,
+            "UNEXPECTED_END",
+            "Unexpected end of input: no value",
+          );
         }
-        return toErrorState(s, "Unexpected end of input");
+        return toErrorState(s, "UNEXPECTED_END", "Unexpected end of input");
 
       case "Separator":
       case "ArrayItemOrEnd":
       case "ObjectKeyOrEnd":
       case "ObjectKey":
       case "ObjectColon":
-        return toErrorState(s, "Unexpected end of input: unclosed container");
+        return toErrorState(
+          s,
+          "UNEXPECTED_END",
+          "Unexpected end of input: unclosed container",
+        );
 
       default:
-        return toErrorState(s, "Unexpected end of input");
+        return toErrorState(s, "UNEXPECTED_END", "Unexpected end of input");
     }
 
     // If mode didn't change, we're stuck — avoid infinite loop

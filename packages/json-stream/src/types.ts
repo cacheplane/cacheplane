@@ -8,7 +8,13 @@ export type JsonValue =
 
 export type NodeStatus = "complete" | "incomplete";
 
+export type StreamErrorCode =
+  | "INVALID_SYNTAX"
+  | "UNEXPECTED_END"
+  | "TRAILING_CONTENT";
+
 export interface StreamError {
+  code: StreamErrorCode;
   message: string;
   index: number;
   line: number;

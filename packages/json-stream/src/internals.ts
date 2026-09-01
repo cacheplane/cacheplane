@@ -5,6 +5,7 @@ import type {
   JsonValue,
   ObjectNode,
   StreamError,
+  StreamErrorCode,
   StringNode,
 } from "./types";
 
@@ -25,21 +26,29 @@ export function replaceNode(
 }
 
 export function createStreamError(
+  code: StreamErrorCode,
   message: string,
   index: number,
   line: number,
   column: number,
 ): StreamError {
-  return { message, index, line, column };
+  return { code, message, index, line, column };
 }
 
 export function toErrorState(
   state: InternalState,
+  code: StreamErrorCode,
   message: string,
 ): InternalState {
   return {
     ...state,
-    error: createStreamError(message, state.index, state.line, state.column),
+    error: createStreamError(
+      code,
+      message,
+      state.index,
+      state.line,
+      state.column,
+    ),
     mode: "Error",
     complete: false,
   };
@@ -145,7 +154,11 @@ export function openNode(
 
   if (state.rootId !== null && parentId === null) {
     return {
-      state: toErrorState(state, "Unexpected value after root"),
+      state: toErrorState(
+        state,
+        "TRAILING_CONTENT",
+        "Unexpected value after root",
+      ),
       nodeId: -1,
     };
   }
@@ -215,7 +228,11 @@ export function openNode(
     } else if (parent.kind === "object") {
       if (!pendingKey || pendingKeyOwner !== parentId) {
         return {
-          state: toErrorState(state, "Missing key before value in object"),
+          state: toErrorState(
+            state,
+            "INVALID_SYNTAX",
+            "Missing key before value in object",
+          ),
           nodeId: -1,
         };
       }

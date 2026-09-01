@@ -152,6 +152,11 @@ const value = resolve(state);
 
 Each call returns a new `StreamState`.
 
+The pull-style exports also include `StreamError` and `StreamErrorCode` from
+`@cacheplane/json-stream`, including the stable `INVALID_SYNTAX`,
+`UNEXPECTED_END`, and `TRAILING_CONTENT` categories. Branch on `code`, not exact
+error-message text.
+
 ## Structural-Sharing Snapshots
 
 `materialize(node)` converts a parser node tree into a plain JavaScript value.
@@ -373,7 +378,7 @@ isComplete(node): boolean;
 Exported types:
 
 ```ts
-JsonNode, JsonValue, StreamStatus, StreamState, StreamError, ParseEvent,
+JsonNode, JsonValue, StreamStatus, StreamState, StreamError, StreamErrorCode, ParseEvent,
 JsonObjectNode, JsonArrayNode, JsonStringNode, JsonNumberNode,
 JsonBooleanNode, JsonNullNode, JsonNodeType,
 AstNode, ObjectNode, ArrayNode, StringNode, NumberNode, BoolNode, NullNode

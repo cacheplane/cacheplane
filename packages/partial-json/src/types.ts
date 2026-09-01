@@ -7,6 +7,7 @@ export type {
   NumberNode,
   ObjectNode,
   StreamError,
+  StreamErrorCode,
   StreamState,
   StringNode,
 } from '@cacheplane/json-stream';
