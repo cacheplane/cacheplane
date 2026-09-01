@@ -3,6 +3,7 @@ import {
   closePrimitive,
   toErrorState,
   afterValue,
+  INCOMPLETE_NUMBER_RE,
   NUMBER_RE,
 } from "./internals";
 
@@ -23,6 +24,13 @@ export function finishInternal(state: InternalState): InternalState {
         const node = s.nodes[nodeId] as { buffer: string };
         const buf = node.buffer;
         if (!NUMBER_RE.test(buf)) {
+          if (INCOMPLETE_NUMBER_RE.test(buf)) {
+            return toErrorState(
+              s,
+              "UNEXPECTED_END",
+              `Unexpected end of input while parsing number: "${buf}"`,
+            );
+          }
           return toErrorState(
             s,
             "INVALID_SYNTAX",

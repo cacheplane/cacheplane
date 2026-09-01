@@ -12,6 +12,11 @@ import type {
 // Number validation regex: matches a valid JSON number string
 export const NUMBER_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
 
+// Matches buffers that are not complete JSON numbers yet but can become valid
+// by appending more input.
+export const INCOMPLETE_NUMBER_RE =
+  /^(?:-|-?(?:0|[1-9]\d*)\.|-?(?:0|[1-9]\d*)(?:\.\d+)?[eE][+-]?)$/;
+
 // --- Node operations ---
 
 export function replaceNode(

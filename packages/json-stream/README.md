@@ -68,9 +68,12 @@ type StreamErrorCode =
   | "TRAILING_CONTENT";
 ```
 
-- `INVALID_SYNTAX` means a token or JSON grammar rule is malformed.
-- `UNEXPECTED_END` means `finish()` found input that ended before a value or
-  container was complete.
+- `INVALID_SYNTAX` means a token or JSON grammar rule is malformed, including a
+  completed primitive that cannot parse.
+- `UNEXPECTED_END` means `finish()` found input that ended while a value or
+  container was still an incrementally valid prefix. This includes number
+  prefixes such as `-`, `1.`, and `1e+`, which could become valid with more
+  input.
 - `TRAILING_CONTENT` means more non-whitespace input arrived after the root JSON
   value was complete.
 
