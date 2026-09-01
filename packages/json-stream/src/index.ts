@@ -8,6 +8,7 @@ export type {
   NumberNode,
   ObjectNode,
   StreamError,
+  StreamErrorCode,
   StreamState,
   StringNode,
 } from "./types";

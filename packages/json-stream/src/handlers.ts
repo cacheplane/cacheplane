@@ -135,7 +135,7 @@ export function handleValue(
   // Unknown character
   const code = ch.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0");
   return {
-    state: toErrorState(state, `Unexpected token U+${code}`),
+    state: toErrorState(state, "INVALID_SYNTAX", `Unexpected token U+${code}`),
     pos: state.index,
   };
 }
@@ -206,6 +206,7 @@ export function handleStringValue(
       return {
         state: toErrorState(
           state,
+          "INVALID_SYNTAX",
           `Invalid unicode escape: expected hex digit, got '${ch}'`,
         ),
         pos: state.index,
@@ -232,7 +233,11 @@ export function handleStringValue(
     const mapped = ESCAPE_MAP[ch];
     if (mapped === undefined) {
       return {
-        state: toErrorState(s1, `Invalid escape sequence \\${ch}`),
+        state: toErrorState(
+          s1,
+          "INVALID_SYNTAX",
+          `Invalid escape sequence \\${ch}`,
+        ),
         pos: s1.index,
       };
     }
@@ -290,6 +295,7 @@ export function handleStringValue(
     return {
       state: toErrorState(
         state,
+        "INVALID_SYNTAX",
         `Invalid control character U+${hex} (${name}) in string`,
       ),
       pos: state.index,
@@ -326,6 +332,7 @@ export function handleNumberValue(
       return {
         state: toErrorState(
           state,
+          "INVALID_SYNTAX",
           `Invalid number: leading zero in "${buf}${ch}"`,
         ),
         pos: state.index,
@@ -339,6 +346,7 @@ export function handleNumberValue(
       return {
         state: toErrorState(
           state,
+          "INVALID_SYNTAX",
           `Invalid number: expected digit after decimal point in "${buf}"`,
         ),
         pos: state.index,
@@ -352,6 +360,7 @@ export function handleNumberValue(
       return {
         state: toErrorState(
           state,
+          "INVALID_SYNTAX",
           `Invalid number: expected digit or sign after exponent in "${buf}"`,
         ),
         pos: state.index,
@@ -365,6 +374,7 @@ export function handleNumberValue(
       return {
         state: toErrorState(
           state,
+          "INVALID_SYNTAX",
           `Invalid number: expected digit after exponent sign in "${buf}"`,
         ),
         pos: state.index,
@@ -393,7 +403,11 @@ export function handleNumberValue(
   // Terminating character: validate and close
   if (!NUMBER_RE.test(buf)) {
     return {
-      state: toErrorState(state, `Invalid number: "${buf}"`),
+      state: toErrorState(
+        state,
+        "INVALID_SYNTAX",
+        `Invalid number: "${buf}"`,
+      ),
       pos: state.index,
     };
   }
@@ -444,6 +458,7 @@ export function handleLiteralValue(
     return {
       state: toErrorState(
         state,
+        "INVALID_SYNTAX",
         `Unexpected character '${ch}' while parsing literal`,
       ),
       pos: state.index,
@@ -533,7 +548,11 @@ export function handleObjectKeyOrEnd(
   }
 
   return {
-    state: toErrorState(state, `Expected string key or '}', got '${ch}'`),
+    state: toErrorState(
+      state,
+      "INVALID_SYNTAX",
+      `Expected string key or '}', got '${ch}'`,
+    ),
     pos: state.index,
   };
 }
@@ -551,7 +570,7 @@ export function handleObjectKey(
 
   if (ch === "}") {
     return {
-      state: toErrorState(state, "Trailing comma in object"),
+      state: toErrorState(state, "INVALID_SYNTAX", "Trailing comma in object"),
       pos: state.index,
     };
   }
@@ -570,7 +589,11 @@ export function handleObjectKey(
   }
 
   return {
-    state: toErrorState(state, `Expected string key, got '${ch}'`),
+    state: toErrorState(
+      state,
+      "INVALID_SYNTAX",
+      `Expected string key, got '${ch}'`,
+    ),
     pos: state.index,
   };
 }
@@ -592,7 +615,11 @@ export function handleObjectColon(
   }
 
   return {
-    state: toErrorState(state, `Expected ':', got '${ch}'`),
+    state: toErrorState(
+      state,
+      "INVALID_SYNTAX",
+      `Expected ':', got '${ch}'`,
+    ),
     pos: state.index,
   };
 }
@@ -619,7 +646,10 @@ export function handleSeparator(
       // Use ObjectKey (not ObjectKeyOrEnd) to reject trailing commas
       return { state: { ...s1, mode: "ObjectKey" }, pos: s1.index };
     }
-    return { state: toErrorState(s1, "Unexpected comma"), pos: s1.index };
+    return {
+      state: toErrorState(s1, "INVALID_SYNTAX", "Unexpected comma"),
+      pos: s1.index,
+    };
   }
 
   if (ch === "]") {
@@ -627,7 +657,11 @@ export function handleSeparator(
     const parent = state.nodes[parentId];
     if (parent.kind !== "array") {
       return {
-        state: toErrorState(state, `Expected '}' but got ']'`),
+        state: toErrorState(
+          state,
+          "INVALID_SYNTAX",
+          `Expected '}' but got ']'`,
+        ),
         pos: state.index,
       };
     }
@@ -643,7 +677,11 @@ export function handleSeparator(
     const parent = state.nodes[parentId];
     if (parent.kind !== "object") {
       return {
-        state: toErrorState(state, `Expected ']' but got '}'`),
+        state: toErrorState(
+          state,
+          "INVALID_SYNTAX",
+          `Expected ']' but got '}'`,
+        ),
         pos: state.index,
       };
     }
@@ -657,6 +695,7 @@ export function handleSeparator(
   return {
     state: toErrorState(
       state,
+      "INVALID_SYNTAX",
       `Unexpected character '${ch}' in separator position`,
     ),
     pos: state.index,
@@ -673,7 +712,11 @@ export function handleDone(
     return { state: advancePosition(state, ch), pos: state.index + 1 };
   }
   return {
-    state: toErrorState(state, "Unexpected token after root value"),
+    state: toErrorState(
+      state,
+      "TRAILING_CONTENT",
+      "Unexpected token after root value",
+    ),
     pos: state.index,
   };
 }

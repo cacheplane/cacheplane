@@ -1,6 +1,6 @@
 {
   "name": "@cacheplane/partial-json",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Streaming partial-JSON parser with identity preservation, push/pull APIs, JSON Pointer lookups, and structural-sharing materialization.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -14,7 +14,7 @@
     "./package.json": "./package.json"
   },
   "sideEffects": false,
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": ["dist", "README.md", "CHANGELOG.md", "LICENSE"],
   "scripts": {
     "prepare:kernel": "pnpm --filter @cacheplane/json-stream build",
     "prebuild": "pnpm run prepare:kernel",
@@ -31,7 +31,7 @@
     "attw": "attw --pack ."
   },
   "dependencies": {
-    "@cacheplane/json-stream": "workspace:^"
+    "@cacheplane/json-stream": "workspace:^0.1.0"
   },
   "license": "MIT",
   "repository": {

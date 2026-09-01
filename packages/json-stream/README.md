@@ -55,6 +55,33 @@ Every node in the tree carries a `status` of `partial` or `complete`. That is
 the distinction the whole library exists for: a consumer can render a string
 that is still arriving, and know not to treat it as final.
 
+## Structured Errors
+
+When parsing fails, `state.error` contains a `StreamError` with source location,
+a human-readable `message`, and a stable `code` from the public
+`StreamErrorCode` union:
+
+```ts
+type StreamErrorCode =
+  | "INVALID_SYNTAX"
+  | "UNEXPECTED_END"
+  | "TRAILING_CONTENT";
+```
+
+- `INVALID_SYNTAX` means a token or JSON grammar rule is malformed, including a
+  completed primitive that cannot parse.
+- `UNEXPECTED_END` means `finish()` found input that ended while a value or
+  container was still an incrementally valid prefix. This includes number
+  prefixes such as `-`, `1.`, and `1e+`, which could become valid with more
+  input.
+- `TRAILING_CONTENT` means more non-whitespace input arrived after the root JSON
+  value was complete.
+
+Use `code` for control flow. Messages remain useful for people and diagnostics,
+but their exact wording is not part of the control-flow contract. Error states
+are terminal: later `push()` and `finish()` calls preserve the same structured
+error state.
+
 ## Type Guards
 
 Narrowing helpers for each node kind, plus a status check:

@@ -50,10 +50,21 @@ try {
     execFileSync('tar', ['-xOf', tarball, 'package/package.json'], { encoding: 'utf8' }),
   );
   const files = execFileSync('tar', ['-tf', tarball], { encoding: 'utf8' }).trim().split('\n');
+  const kernelFiles = execFileSync('tar', ['-tf', kernelTarball], { encoding: 'utf8' })
+    .trim()
+    .split('\n');
 
   assert.equal(manifest.dependencies['@cacheplane/json-stream'], `^${kernelManifest.version}`);
   assert.doesNotMatch(JSON.stringify(manifest), /workspace:/);
   assert.ok(files.every((file) => !file.startsWith('package/src/')));
+  assert.ok(
+    files.includes('package/CHANGELOG.md'),
+    'partial-json tarball must include CHANGELOG.md',
+  );
+  assert.ok(
+    kernelFiles.includes('package/CHANGELOG.md'),
+    'json-stream tarball must include CHANGELOG.md',
+  );
 
   await writeFile(
     join(temporaryDirectory, 'package.json'),

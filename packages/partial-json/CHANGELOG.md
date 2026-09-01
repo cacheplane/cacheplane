@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 — 2026-09-01
+
+### Added
+
+- Re-exported `StreamErrorCode` alongside the immutable parser types from
+  `@cacheplane/json-stream`.
+
+### Changed
+
+- **Source-breaking:** the re-exported `StreamError` now requires `code`.
+  Consumers that construct or mirror the type must add it and should branch on
+  `error.code` instead of matching human-readable message text.
+- Updated the parser-kernel dependency to `@cacheplane/json-stream@^0.1.0`.
+
 ## 0.2.2 — 2026-08-11
 
 ### Changed
