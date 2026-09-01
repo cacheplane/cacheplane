@@ -4,16 +4,25 @@ Releases up to and including `0.0.3` were cut from `cacheplane/pretable`, where
 this package originally lived. Entries below `0.0.3` are the changesets-generated
 history from that repo, preserved verbatim.
 
-## 0.0.5 — 2026-09-01
+## 0.1.0 — 2026-09-01
 
 ### Added
 
-- Added the public `StreamErrorCode` union and required `code` field on
-  `StreamError`, with stable `INVALID_SYNTAX`, `UNEXPECTED_END`, and
-  `TRAILING_CONTENT` categories.
+- Added the public `StreamErrorCode` union with stable `INVALID_SYNTAX`,
+  `UNEXPECTED_END`, and `TRAILING_CONTENT` categories.
 - Parser error states retain their structured code across later `push()` and
   `finish()` calls. Human-readable messages remain diagnostic rather than a
   control-flow contract.
+
+### Changed
+
+- **Source-breaking:** `StreamError.code` is now required. Consumers that
+  construct, narrow, or mirror `StreamError` must add the field. Branch on
+  `error.code` rather than matching `error.message`; message wording is not a
+  control-flow contract.
+- `finish()` classifies incrementally valid number prefixes such as `-`, `1.`,
+  and `1e+` as `UNEXPECTED_END`. Malformed numeric grammar remains
+  `INVALID_SYNTAX`.
 
 ## 0.0.4 — 2026-08-07
 

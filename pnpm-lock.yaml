@@ -44,7 +44,7 @@ importers:
   packages/partial-json:
     dependencies:
       '@cacheplane/json-stream':
-        specifier: workspace:^0.0.5
+        specifier: workspace:^0.1.0
         version: link:../json-stream
 
   packages/partial-markdown:

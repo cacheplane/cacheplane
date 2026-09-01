@@ -155,7 +155,9 @@ Each call returns a new `StreamState`.
 The pull-style exports also include `StreamError` and `StreamErrorCode` from
 `@cacheplane/json-stream`, including the stable `INVALID_SYNTAX`,
 `UNEXPECTED_END`, and `TRAILING_CONTENT` categories. Branch on `code`, not exact
-error-message text.
+error-message text. `UNEXPECTED_END` includes incrementally valid number prefixes
+such as `-`, `1.`, and `1e+`; completed malformed grammar is
+`INVALID_SYNTAX`.
 
 ## Structural-Sharing Snapshots
 

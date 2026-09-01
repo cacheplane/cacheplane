@@ -1,6 +1,6 @@
 {
   "name": "@cacheplane/json-stream",
-  "version": "0.0.5",
+  "version": "0.1.0",
   "description": "Streaming incremental JSON parser with push/pull APIs, node guards, and JSON Pointer resolution.",
   "type": "module",
   "main": "./dist/index.cjs",
