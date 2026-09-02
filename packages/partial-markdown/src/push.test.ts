@@ -37,4 +37,23 @@ describe('pushInternal — line buffering', () => {
     const s1 = pushInternal(s0, '');
     expect(s1).toBe(s0);
   });
+
+  it('does nothing after the stream is complete', () => {
+    const s0 = { ...createInternal(), complete: true };
+
+    const s1 = pushInternal(s0, 'late content\n');
+
+    expect(s1).toBe(s0);
+  });
+
+  it('does nothing after the stream has failed', () => {
+    const s0 = {
+      ...createInternal(),
+      error: { message: 'failed', index: 0, line: 1, column: 1 },
+    };
+
+    const s1 = pushInternal(s0, 'late content\n');
+
+    expect(s1).toBe(s0);
+  });
 });
