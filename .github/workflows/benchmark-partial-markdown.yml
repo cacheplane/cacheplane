@@ -1,0 +1,77 @@
+name: Benchmark Partial Markdown
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: Git ref to compare against
+        required: true
+        default: main
+        type: string
+      samples:
+        description: Initial paired sample count
+        required: true
+        default: '31'
+        type: choice
+        options:
+          - '31'
+          - '101'
+          - '301'
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: Compare partial-Markdown worktrees
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v6
+        with:
+          path: candidate
+
+      - name: Checkout baseline
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.baseline_ref }}
+          path: baseline
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: |
+            candidate/pnpm-lock.yaml
+            baseline/pnpm-lock.yaml
+
+      - name: Install candidate
+        run: pnpm --dir candidate install --frozen-lockfile
+
+      - name: Install baseline
+        run: pnpm --dir baseline install --frozen-lockfile
+
+      - name: Build candidate partial-Markdown
+        run: pnpm --dir candidate --filter @cacheplane/partial-markdown build
+
+      - name: Build baseline partial-Markdown
+        run: pnpm --dir baseline --filter @cacheplane/partial-markdown build
+
+      - name: Compare partial-Markdown benchmarks
+        run: pnpm --dir candidate run bench:markdown:compare "$GITHUB_WORKSPACE/baseline" "$GITHUB_WORKSPACE/candidate" --samples "$SAMPLES" --output "$GITHUB_WORKSPACE/partial-markdown-benchmark.json"
+        env:
+          SAMPLES: ${{ inputs.samples }}
+
+      - name: Upload partial-Markdown benchmark report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: partial-markdown-benchmark
+          path: partial-markdown-benchmark.json
+          retention-days: 7
+          if-no-files-found: warn
