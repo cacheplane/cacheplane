@@ -3,9 +3,10 @@ import { performance } from 'node:perf_hooks';
 import {
   median,
   relativeMedianAbsoluteDeviation,
-  repetitionsForTargetDuration,
 } from './bench-lib.mjs';
 import {
+  collectMarkdownRetainedHeapSamples,
+  markdownRepetitionsForScenario,
   markdownRetainedHeapRelativeMad,
   measureMarkdownRetainedHeapSample,
   parseMarkdownWorkerArguments,
@@ -23,6 +24,7 @@ import {
 const { implementation, workload: workloadName, chunking, samples } = (
   parseMarkdownWorkerArguments(process.argv.slice(2))
 );
+const scenario = { implementation, workload: workloadName, chunking };
 if (typeof global.gc !== 'function') {
   throw new Error('Markdown benchmark workers require --expose-gc');
 }
@@ -53,7 +55,10 @@ for (let iteration = 0; iteration < 5; iteration += 1) {
   run();
   calibrationDurations.push(performance.now() - start);
 }
-const repetitions = repetitionsForTargetDuration(median(calibrationDurations), 50);
+const repetitions = markdownRepetitionsForScenario(
+  median(calibrationDurations),
+  scenario,
+);
 
 const durations = [];
 for (let iteration = 0; iteration < samples; iteration += 1) {
@@ -62,18 +67,22 @@ for (let iteration = 0; iteration < samples; iteration += 1) {
   durations.push((performance.now() - start) / repetitions);
 }
 
-const retainedHeapSamples = [];
-for (let iteration = 0; iteration < 7; iteration += 1) {
-  retainedHeapSamples.push(measureMarkdownRetainedHeapSample(run, {
-    retainPrevious: prepared,
-    collectGarbage: () => global.gc(),
-    heapUsed: () => process.memoryUsage().heapUsed,
-    retain: (value) => {
-      globalThis.__cacheplaneMarkdownBenchmarkRetained = value;
-    },
-  }));
-  globalThis.__cacheplaneMarkdownBenchmarkRetained = undefined;
-}
+const retainedHeapSamples = collectMarkdownRetainedHeapSamples(
+  run,
+  scenario,
+  (sampleRun) => {
+    const sample = measureMarkdownRetainedHeapSample(sampleRun, {
+      retainPrevious: prepared,
+      collectGarbage: () => global.gc(),
+      heapUsed: () => process.memoryUsage().heapUsed,
+      retain: (value) => {
+        globalThis.__cacheplaneMarkdownBenchmarkRetained = value;
+      },
+    });
+    globalThis.__cacheplaneMarkdownBenchmarkRetained = undefined;
+    return sample;
+  },
+);
 
 process.stdout.write(JSON.stringify({
   implementation,

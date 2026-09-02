@@ -17,13 +17,14 @@ import {
   assertMarkdownComparisonOutputsEquivalent,
   assertMarkdownComparisonRunOutputsEquivalent,
   classifyMarkdownPairedMeasurements,
+  collectMarkdownRetainedHeapSamples,
   createMarkdownComparisonProgress,
   createMarkdownComparisonReport,
   createMarkdownBenchmarkReport,
   formatMarkdownBenchmarkProgress,
   markdownComparisonExitCode,
   markdownComparisonCalibrationDuration,
-  markdownComparisonRepetitionsForScenario,
+  markdownRepetitionsForScenario,
   markdownComparisonWorkerError,
   markdownComparisonWorkerTimeoutMs,
   markdownBenchmarkWorkerError,
@@ -87,7 +88,7 @@ test('defines the exact Markdown workload names', () => {
   assert.deepEqual(names, [
     'mixed',
     'long-prose',
-    'deep-blockquote',
+    'deep-list',
     'wide-table',
     'references',
   ]);
@@ -122,7 +123,33 @@ test('defines expected Markdown shape metadata for every workload', () => {
     assert.ok(expectedShape.minimumCitationCount >= 0);
     assert.ok(Number.isInteger(expectedShape.minimumLinkDefinitionCount));
     assert.ok(expectedShape.minimumLinkDefinitionCount >= 0);
+    assert.ok(Number.isInteger(expectedShape.minimumTreeDepth));
+    assert.ok(expectedShape.minimumTreeDepth >= 1);
+    assert.ok(Number.isInteger(expectedShape.minimumNodeCount));
+    assert.ok(expectedShape.minimumNodeCount >= 1);
   }
+});
+
+test('includes real multibyte Markdown content in normal chunk equivalence coverage', () => {
+  const workload = markdownWorkloads.find((entry) => entry.name === 'mixed');
+  const chunker = markdownChunkers.find((entry) => entry.name === '64-byte');
+  const { input, chunks } = chunksForMarkdownWorkload(workload, chunker);
+  const chunkedParser = partialMarkdown.createPartialMarkdownParser();
+  const wholeParser = partialMarkdown.createPartialMarkdownParser();
+
+  for (const chunk of chunks) chunkedParser.push(chunk);
+  chunkedParser.finish();
+  wholeParser.push(input);
+  wholeParser.finish();
+
+  assert.ok(Buffer.byteLength(input) > Array.from(input).length);
+  assert.ok(input.includes('\u03A9'));
+  assert.ok(input.includes('\u0301'));
+  assert.ok(input.includes('\u{1F680}'));
+  assert.deepEqual(
+    withoutParserAssignedIds(partialMarkdown.materialize(chunkedParser.root)),
+    withoutParserAssignedIds(partialMarkdown.materialize(wholeParser.root)),
+  );
 });
 
 test('defines whole, 64-byte, and bounded character chunkers', () => {
@@ -205,7 +232,7 @@ test('uses implementation/workload/chunking Markdown measurement keys', () => {
 
 test('defines exactly 48 unique Markdown benchmark scenarios', () => {
   const sourceImplementations = ['events', 'final-materialize', 'materialize-each'];
-  const workloadNames = ['mixed', 'long-prose', 'deep-blockquote', 'wide-table', 'references'];
+  const workloadNames = ['mixed', 'long-prose', 'deep-list', 'wide-table', 'references'];
   const chunkerNames = ['whole', '64-byte', 'character'];
   const expectedSourceKeys = sourceImplementations.flatMap((implementation) => (
     workloadNames.flatMap((workload) => (
@@ -214,8 +241,8 @@ test('defines exactly 48 unique Markdown benchmark scenarios', () => {
   ));
   const expectedKeys = [
     ...expectedSourceKeys,
-    'unchanged/long-prose/prepared',
-    'leaf-change/long-prose/prepared',
+    'unchanged/wide-table/prepared',
+    'leaf-change/wide-table/prepared',
     'citation-change/references/prepared',
   ];
 
@@ -228,7 +255,7 @@ test('defines exactly 48 unique Markdown benchmark scenarios', () => {
 
 test('orders source scenarios by workload, chunker, then implementation', () => {
   const sourceImplementations = ['events', 'final-materialize', 'materialize-each'];
-  const workloadNames = ['mixed', 'long-prose', 'deep-blockquote', 'wide-table', 'references'];
+  const workloadNames = ['mixed', 'long-prose', 'deep-list', 'wide-table', 'references'];
   const chunkerNames = ['whole', '64-byte', 'character'];
   const expectedKeys = workloadNames.flatMap((workload) => (
     chunkerNames.flatMap((chunking) => (
@@ -347,8 +374,8 @@ test('rejects invalid Markdown worker arguments', () => {
     ['unknown', 'mixed', 'whole', '3'],
     ['events', 'unknown', 'whole', '3'],
     ['events', 'mixed', 'unknown', '3'],
-    ['events', 'long-prose', 'prepared', '3'],
-    ['unchanged', 'long-prose', 'whole', '3'],
+    ['events', 'wide-table', 'prepared', '3'],
+    ['unchanged', 'wide-table', 'whole', '3'],
     ['events', 'mixed', 'whole', '3.5'],
     ['events', 'mixed', 'whole', '2'],
   ];
@@ -444,17 +471,16 @@ test('reports the one-hour Markdown comparison worker timeout clearly', () => {
 });
 
 test('Markdown benchmark worker emits one valid measurement as JSON', () => {
-  const workerPath = fileURLToPath(new URL('./bench-markdown-worker.mjs', import.meta.url));
+  const scenario = {
+    implementation: 'events',
+    workload: 'deep-list',
+    chunking: 'whole',
+  };
 
-  const worker = spawnSync(
-    process.execPath,
-    ['--expose-gc', workerPath, 'events', 'deep-blockquote', 'whole', '3'],
-    { encoding: 'utf8', timeout: markdownBenchmarkWorkerTimeoutMs },
-  );
+  const { worker, measurement } = runMarkdownBenchmarkWorker(scenario);
 
   assert.equal(worker.status, 0, worker.stderr);
   assert.equal(worker.stderr, '');
-  const measurement = JSON.parse(worker.stdout);
   assert.deepEqual(
     {
       implementation: measurement.implementation,
@@ -463,7 +489,7 @@ test('Markdown benchmark worker emits one valid measurement as JSON', () => {
     },
     {
       implementation: 'events',
-      workload: 'deep-blockquote',
+      workload: 'deep-list',
       chunking: 'whole',
     },
   );
@@ -482,10 +508,34 @@ test('Markdown benchmark worker emits one valid measurement as JSON', () => {
   }
 });
 
+test('Markdown benchmark worker phase-hardens prepared mutation measurements', () => {
+  const scenario = {
+    implementation: 'leaf-change',
+    workload: 'wide-table',
+    chunking: 'prepared',
+  };
+
+  const { worker, measurement } = runMarkdownBenchmarkWorker(scenario);
+
+  assert.equal(worker.status, 0, worker.stderr);
+  assert.equal(worker.stderr, '');
+  assert.deepEqual(
+    {
+      implementation: measurement.implementation,
+      workload: measurement.workload,
+      chunking: measurement.chunking,
+    },
+    scenario,
+  );
+  assert.ok(Number.isInteger(measurement.repetitions));
+  assert.ok(measurement.repetitions > 0);
+  assert.equal(measurement.repetitions % 2, 0);
+});
+
 test('Markdown comparison worker emits one valid paired measurement as JSON', () => {
   const scenario = {
     implementation: 'events',
-    workload: 'deep-blockquote',
+    workload: 'deep-list',
     chunking: 'whole',
   };
 
@@ -502,7 +552,7 @@ test('Markdown comparison worker emits one valid paired measurement as JSON', ()
     },
     {
       implementation: 'events',
-      workload: 'deep-blockquote',
+      workload: 'deep-list',
       chunking: 'whole',
       samples: 30,
     },
@@ -527,7 +577,7 @@ test('Markdown comparison worker emits one valid paired measurement as JSON', ()
 test('Markdown comparison worker phase-hardens prepared leaf-change measurements', () => {
   const scenario = {
     implementation: 'leaf-change',
-    workload: 'long-prose',
+    workload: 'wide-table',
     chunking: 'prepared',
   };
 
@@ -828,14 +878,14 @@ test('calibrates paired Markdown repetitions from the slower five-run median', (
 
 test('paired prepared mutation measurements complete two-state cycles from either phase', () => {
   const scenarios = [
-    { implementation: 'leaf-change', workload: 'long-prose', chunking: 'prepared' },
+    { implementation: 'leaf-change', workload: 'wide-table', chunking: 'prepared' },
     { implementation: 'citation-change', workload: 'references', chunking: 'prepared' },
   ];
   const startingPhases = [0, 1];
 
   const measurements = scenarios.flatMap((scenario) => (
     startingPhases.map((startingPhase) => {
-      const repetitions = markdownComparisonRepetitionsForScenario(20, scenario);
+      const repetitions = markdownRepetitionsForScenario(20, scenario);
       const states = Array.from(
         { length: repetitions },
         (_, index) => (startingPhase + index) % 2,
@@ -864,11 +914,11 @@ test('paired prepared mutation measurements complete two-state cycles from eithe
   }
 });
 
-test('paired repetition hardening preserves other scenarios and the 10,000 bound', () => {
+test('Markdown repetition hardening preserves other scenarios and the 10,000 bound', () => {
   const scenarios = {
     source: { implementation: 'events', workload: 'mixed', chunking: 'whole' },
-    unchanged: { implementation: 'unchanged', workload: 'long-prose', chunking: 'prepared' },
-    leafChange: { implementation: 'leaf-change', workload: 'long-prose', chunking: 'prepared' },
+    unchanged: { implementation: 'unchanged', workload: 'wide-table', chunking: 'prepared' },
+    leafChange: { implementation: 'leaf-change', workload: 'wide-table', chunking: 'prepared' },
     citationChange: {
       implementation: 'citation-change',
       workload: 'references',
@@ -877,10 +927,10 @@ test('paired repetition hardening preserves other scenarios and the 10,000 bound
   };
 
   const repetitions = {
-    source: markdownComparisonRepetitionsForScenario(20, scenarios.source),
-    unchanged: markdownComparisonRepetitionsForScenario(20, scenarios.unchanged),
-    leafChange: markdownComparisonRepetitionsForScenario(20, scenarios.leafChange),
-    citationChangeAtMaximum: markdownComparisonRepetitionsForScenario(
+    source: markdownRepetitionsForScenario(20, scenarios.source),
+    unchanged: markdownRepetitionsForScenario(20, scenarios.unchanged),
+    leafChange: markdownRepetitionsForScenario(20, scenarios.leafChange),
+    citationChangeAtMaximum: markdownRepetitionsForScenario(
       0,
       scenarios.citationChange,
     ),
@@ -914,7 +964,7 @@ test('asserts Markdown comparison output equivalence with scenario context', () 
 
 test('prepared mutation comparison validates both consecutive toggle states from fresh runs', () => {
   const scenarios = [
-    { implementation: 'leaf-change', workload: 'long-prose' },
+    { implementation: 'leaf-change', workload: 'wide-table' },
     { implementation: 'citation-change', workload: 'references' },
   ];
 
@@ -1047,6 +1097,80 @@ test('source retained-heap samples retain only the new result', () => {
   assert.deepEqual(events, ['gc', 'heap', 'run', 'retain', 'gc', 'heap']);
 });
 
+test('prepared mutation retained-heap samples balance both mutation directions', () => {
+  const scenarios = [
+    { implementation: 'leaf-change', workload: 'wide-table', chunking: 'prepared' },
+    { implementation: 'citation-change', workload: 'references', chunking: 'prepared' },
+  ];
+
+  const results = scenarios.map((scenario) => {
+    const directions = [];
+    let phase = 0;
+    const run = () => {
+      const currentPhase = phase;
+      phase = 1 - phase;
+      return currentPhase;
+    };
+    const samples = collectMarkdownRetainedHeapSamples(run, scenario, (sampleRun) => {
+      const previous = sampleRun();
+      const current = sampleRun();
+      directions.push(`${previous}->${current}`);
+      return directions.length;
+    });
+    return { scenario, samples, directions };
+  });
+
+  for (const result of results) {
+    assert.equal(result.samples.length, 8, result.scenario.implementation);
+    assert.equal(
+      result.directions.filter((direction) => direction === '0->1').length,
+      4,
+      result.scenario.implementation,
+    );
+    assert.equal(
+      result.directions.filter((direction) => direction === '1->0').length,
+      4,
+      result.scenario.implementation,
+    );
+  }
+});
+
+test('retained-heap collection preserves source and prepared unchanged sampling', () => {
+  const scenarios = [
+    { implementation: 'events', workload: 'mixed', chunking: 'whole', runsPerSample: 1 },
+    {
+      implementation: 'unchanged',
+      workload: 'wide-table',
+      chunking: 'prepared',
+      runsPerSample: 2,
+    },
+  ];
+
+  const results = scenarios.map(({ runsPerSample, ...scenario }) => {
+    let runCalls = 0;
+    const samples = collectMarkdownRetainedHeapSamples(
+      () => {
+        runCalls += 1;
+      },
+      scenario,
+      (sampleRun) => {
+        for (let index = 0; index < runsPerSample; index += 1) sampleRun();
+        return runCalls;
+      },
+    );
+    return { scenario, samples, runCalls, runsPerSample };
+  });
+
+  for (const result of results) {
+    assert.equal(result.samples.length, 7, result.scenario.implementation);
+    assert.equal(
+      result.runCalls,
+      7 * result.runsPerSample,
+      result.scenario.implementation,
+    );
+  }
+});
+
 test('all Markdown chunkings materialize like a whole push of the same effective input', () => {
   let comparisons = 0;
 
@@ -1092,7 +1216,32 @@ test('complete whole-input workloads match their expected Markdown shapes', () =
       snapshot.linkDefinitions.size >= workload.expectedShape.minimumLinkDefinitionCount,
       workload.name,
     );
+    assert.ok(
+      markdownTreeDepth(snapshot) >= workload.expectedShape.minimumTreeDepth,
+      workload.name,
+    );
+    assert.ok(
+      markdownNodeCount(snapshot) >= workload.expectedShape.minimumNodeCount,
+      workload.name,
+    );
   }
+});
+
+test('prepared cache scenarios use a broad materialized Markdown tree', () => {
+  const preparedCacheScenarios = markdownScenarios.filter((scenario) => (
+    scenario.chunking === 'prepared' && scenario.implementation !== 'citation-change'
+  ));
+  const workload = markdownWorkloads.find((entry) => entry.name === 'wide-table');
+  const run = createSourceRun(partialMarkdown, 'final-materialize', [workload.input]);
+
+  const snapshot = run();
+
+  assert.deepEqual(
+    preparedCacheScenarios.map((scenario) => scenario.workload),
+    ['wide-table', 'wide-table'],
+  );
+  assert.ok(markdownNodeCount(snapshot) >= 1_500);
+  assert.ok(markdownNodeCount(snapshot) >= workload.expectedShape.minimumNodeCount);
 });
 
 test('source runs create a parser per invocation and execute the selected materialization policy', () => {
@@ -1134,7 +1283,7 @@ test('source runs reject unknown implementations', () => {
 });
 
 test('prepared unchanged runs parse and prime once then reuse snapshot identity', () => {
-  const workload = markdownWorkloads.find((entry) => entry.name === 'long-prose');
+  const workload = markdownWorkloads.find((entry) => entry.name === 'wide-table');
   const instrumented = instrumentPartialMarkdown();
 
   const run = createPreparedMaterializeRun(instrumented.module, 'unchanged', workload);
@@ -1153,7 +1302,7 @@ test('prepared unchanged runs parse and prime once then reuse snapshot identity'
 });
 
 test('prepared leaf-change runs alternate an equal-length text mutation on every invocation', () => {
-  const workload = markdownWorkloads.find((entry) => entry.name === 'long-prose');
+  const workload = markdownWorkloads.find((entry) => entry.name === 'wide-table');
   const fixtureInput = workload.input;
   const instrumented = instrumentPartialMarkdown();
 
@@ -1336,6 +1485,27 @@ function runMarkdownComparisonWorker(scenario) {
   return { worker, measurement };
 }
 
+function runMarkdownBenchmarkWorker(scenario) {
+  const workerPath = fileURLToPath(
+    new URL('./bench-markdown-worker.mjs', import.meta.url),
+  );
+  const worker = spawnSync(
+    process.execPath,
+    [
+      '--expose-gc',
+      workerPath,
+      scenario.implementation,
+      scenario.workload,
+      scenario.chunking,
+      '3',
+    ],
+    { encoding: 'utf8', timeout: markdownBenchmarkWorkerTimeoutMs },
+  );
+  const measurement = worker.status === 0 ? JSON.parse(worker.stdout) : undefined;
+
+  return { worker, measurement };
+}
+
 function assertPreparedMutationWorkerResult({ worker, measurement }, scenario) {
   assert.equal(worker.status, 0, worker.stderr);
   assert.equal(worker.stderr, '');
@@ -1395,6 +1565,17 @@ function findChangedMapKey(previous, current) {
 
   assert.equal(changedKeys.length, 1);
   return changedKeys[0];
+}
+
+function markdownNodeCount(value) {
+  const children = Array.isArray(value?.children) ? value.children : [];
+  return 1 + children.reduce((count, child) => count + markdownNodeCount(child), 0);
+}
+
+function markdownTreeDepth(value) {
+  const children = Array.isArray(value?.children) ? value.children : [];
+  if (children.length === 0) return 0;
+  return 1 + Math.max(...children.map(markdownTreeDepth));
 }
 
 function withoutParserAssignedIds(value) {

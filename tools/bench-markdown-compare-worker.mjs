@@ -10,7 +10,7 @@ import {
 import {
   assertMarkdownComparisonRunOutputsEquivalent,
   markdownComparisonCalibrationDuration,
-  markdownComparisonRepetitionsForScenario,
+  markdownRepetitionsForScenario,
   parseMarkdownComparisonWorkerArguments,
 } from './bench-markdown-lib.mjs';
 import {
@@ -57,7 +57,7 @@ warm(candidateRun);
 
 const baselineCalibration = calibrate(baselineRun);
 const candidateCalibration = calibrate(candidateRun);
-const repetitions = markdownComparisonRepetitionsForScenario(
+const repetitions = markdownRepetitionsForScenario(
   markdownComparisonCalibrationDuration(
     baselineCalibration,
     candidateCalibration,

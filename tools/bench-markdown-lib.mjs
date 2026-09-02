@@ -29,8 +29,8 @@ const sourceScenarios = markdownWorkloads.flatMap((workload) => (
 ));
 
 const preparedScenarios = [
-  freezeScenario('unchanged', 'long-prose', 'prepared'),
-  freezeScenario('leaf-change', 'long-prose', 'prepared'),
+  freezeScenario('unchanged', 'wide-table', 'prepared'),
+  freezeScenario('leaf-change', 'wide-table', 'prepared'),
   freezeScenario('citation-change', 'references', 'prepared'),
 ];
 
@@ -159,6 +159,26 @@ export function measureMarkdownRetainedHeapSample(run, environment) {
   }
   environment.collectGarbage();
   return Math.max(0, environment.heapUsed() - before);
+}
+
+/**
+ * Collects retained-heap samples with balanced prepared mutation directions.
+ *
+ * @param {() => unknown} run Benchmark invocation.
+ * @param {{ implementation: string, workload: string, chunking: string }} scenario Measured scenario.
+ * @param {(sampleRun: () => unknown) => number} measureSample Per-sample heap measurement.
+ * @returns {number[]} Retained-heap byte samples.
+ */
+export function collectMarkdownRetainedHeapSamples(run, scenario, measureSample) {
+  const preparedMutation = isPreparedMutationScenario(scenario);
+  const sampleCount = preparedMutation ? 8 : 7;
+  const samples = [];
+
+  for (let index = 0; index < sampleCount; index += 1) {
+    if (preparedMutation && index > 0) run();
+    samples.push(measureSample(run));
+  }
+  return samples;
 }
 
 /**
@@ -512,13 +532,13 @@ export function markdownComparisonCalibrationDuration(
 }
 
 /**
- * Calibrates paired repetitions while preserving complete prepared mutation cycles.
+ * Calibrates repetitions while preserving complete prepared mutation cycles.
  *
  * @param {number} durationMs Robust single-run calibration duration.
  * @param {{ implementation: string, workload: string, chunking: string }} scenario Compared scenario.
  * @returns {number} Repetition count bounded to 10,000.
  */
-export function markdownComparisonRepetitionsForScenario(durationMs, scenario) {
+export function markdownRepetitionsForScenario(durationMs, scenario) {
   const repetitions = repetitionsForTargetDuration(durationMs, 50);
   if (!isPreparedMutationScenario(scenario) || repetitions % 2 === 0) {
     return repetitions;

@@ -3,7 +3,7 @@
 const mixed = [
   '# Streaming Markdown benchmark',
   '',
-  'This paragraph mixes **strong text**, *emphasis*, `inline code`, and a [direct link](https://example.com).',
+  'This paragraph mixes **strong text**, *emphasis*, `inline code`, a [direct link](https://example.com), and \u03A9, cafe\u0301, \u{1F680}.',
   '',
   '- Parse incrementally',
   '- Preserve stable identities',
@@ -26,12 +26,9 @@ const longProse = Array.from({ length: 96 }, (_, index) => (
   'and materialization while keeping the prose deterministic enough for repeatable local measurements.'
 )).join(' ');
 
-const deepBlockquote = [
-  `${'> '.repeat(32)}The deepest quoted paragraph remains visible while every prefix is streamed.`,
-  `${'> '.repeat(24)}A second quoted line exercises repeated delimiter and text transitions.`,
-  `${'> '.repeat(16)}The nesting then narrows without introducing unrelated block types.`,
-  `${'> '.repeat(8)}The final quoted line closes the deterministic workload.`,
-].join('\n');
+const deepList = Array.from({ length: 32 }, (_, index) => (
+  `${'  '.repeat(index)}- Nested level ${index + 1}`
+)).join('\n');
 
 const tableColumns = Array.from({ length: 24 }, (_, index) => `Column ${index + 1}`);
 const wideTable = [
@@ -56,11 +53,19 @@ const references = [
 ].join('\n');
 
 export const markdownWorkloads = Object.freeze([
-  workload('mixed', mixed, ['heading', 'paragraph', 'list', 'blockquote', 'code-block', 'table']),
-  workload('long-prose', longProse, ['paragraph']),
-  workload('deep-blockquote', deepBlockquote, ['blockquote']),
-  workload('wide-table', wideTable, ['table']),
-  workload('references', references, ['paragraph'], 3, 3),
+  workload(
+    'mixed',
+    mixed,
+    ['heading', 'paragraph', 'list', 'blockquote', 'code-block', 'table'],
+    0,
+    0,
+    4,
+    52,
+  ),
+  workload('long-prose', longProse, ['paragraph'], 0, 0, 2, 3),
+  workload('deep-list', deepList, ['list'], 0, 0, 66, 129),
+  workload('wide-table', wideTable, ['table'], 0, 0, 4, 1_619),
+  workload('references', references, ['paragraph'], 3, 3, 3, 20),
 ]);
 
 export const markdownChunkers = Object.freeze([
@@ -89,6 +94,8 @@ function workload(
   topLevelNodeTypes,
   minimumCitationCount = 0,
   minimumLinkDefinitionCount = 0,
+  minimumTreeDepth = 1,
+  minimumNodeCount = 1,
 ) {
   return Object.freeze({
     name,
@@ -97,6 +104,8 @@ function workload(
       topLevelNodeTypes: Object.freeze(topLevelNodeTypes),
       minimumCitationCount,
       minimumLinkDefinitionCount,
+      minimumTreeDepth,
+      minimumNodeCount,
     }),
   });
 }
