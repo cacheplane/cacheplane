@@ -2,8 +2,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  createMarkdownBenchmarkReport,
   markdownMeasurementKey,
   markdownScenarios,
+  parseMarkdownBenchmarkOptions,
+  parseMarkdownWorkerArguments,
 } from './bench-markdown-lib.mjs';
 import {
   createPreparedMaterializeRun,
@@ -160,6 +163,139 @@ test('defines exactly 48 unique Markdown benchmark scenarios', () => {
   assert.equal(markdownScenarios.length, 48);
   assert.equal(new Set(keys).size, 48);
   assert.deepEqual([...keys].sort(), [...expectedKeys].sort());
+});
+
+test('parses Markdown benchmark options with stable defaults', () => {
+  const defaults = parseMarkdownBenchmarkOptions([]);
+  const configured = parseMarkdownBenchmarkOptions([
+    '--',
+    '--samples',
+    '7',
+    '--output',
+    '/tmp/markdown.json',
+  ]);
+
+  assert.deepEqual(defaults, { samples: 31, output: undefined });
+  assert.deepEqual(configured, { samples: 7, output: '/tmp/markdown.json' });
+});
+
+test('rejects invalid Markdown benchmark option values', () => {
+  const invalidArguments = [
+    ['--samples'],
+    ['--samples', '--output', '/tmp/markdown.json'],
+    ['--samples', '3.5'],
+    ['--samples', '2'],
+    ['--output'],
+    ['--output', '--samples', '3'],
+  ];
+
+  for (const args of invalidArguments) {
+    assert.throws(
+      () => parseMarkdownBenchmarkOptions(args),
+      /option value|integer >= 3/i,
+      args.join(' '),
+    );
+  }
+});
+
+test('parses every exact Markdown worker scenario', () => {
+  for (const scenario of markdownScenarios) {
+    const parsed = parseMarkdownWorkerArguments([
+      scenario.implementation,
+      scenario.workload,
+      scenario.chunking,
+      '3',
+    ]);
+
+    assert.deepEqual(parsed, { ...scenario, samples: 3 });
+  }
+});
+
+test('rejects invalid Markdown worker arguments', () => {
+  const invalidArguments = [
+    [],
+    ['events', 'mixed', 'whole'],
+    ['events', 'mixed', 'whole', '3', 'extra'],
+    ['unknown', 'mixed', 'whole', '3'],
+    ['events', 'unknown', 'whole', '3'],
+    ['events', 'mixed', 'unknown', '3'],
+    ['events', 'long-prose', 'prepared', '3'],
+    ['unchanged', 'long-prose', 'whole', '3'],
+    ['events', 'mixed', 'whole', '3.5'],
+    ['events', 'mixed', 'whole', '2'],
+  ];
+
+  for (const args of invalidArguments) {
+    assert.throws(
+      () => parseMarkdownWorkerArguments(args),
+      /worker arguments|integer >= 3/i,
+      args.join(' '),
+    );
+  }
+});
+
+test('creates a schema-v1 Markdown benchmark report for the exact scenario matrix', () => {
+  const measurements = createValidMarkdownMeasurements();
+
+  const report = createMarkdownBenchmarkReport(measurements, 7);
+
+  assert.deepEqual(report, {
+    schemaVersion: 1,
+    runtime: process.version,
+    platform: `${process.platform}-${process.arch}`,
+    samples: 7,
+    measurements,
+  });
+  assert.equal(report.measurements.length, 48);
+  assert.equal(
+    new Set(report.measurements.map(markdownMeasurementKey)).size,
+    48,
+  );
+});
+
+test('rejects missing, duplicate, and unexpected Markdown measurements', () => {
+  const measurements = createValidMarkdownMeasurements();
+  const unexpected = {
+    ...measurements[0],
+    implementation: 'unexpected',
+  };
+
+  assert.throws(
+    () => createMarkdownBenchmarkReport(measurements.slice(1), 3),
+    /measurement keys/i,
+  );
+  assert.throws(
+    () => createMarkdownBenchmarkReport([measurements[0], ...measurements.slice(0, -1)], 3),
+    /duplicate measurement keys/i,
+  );
+  assert.throws(
+    () => createMarkdownBenchmarkReport([unexpected, ...measurements.slice(1)], 3),
+    /measurement keys/i,
+  );
+});
+
+test('rejects invalid Markdown measurement numeric fields', () => {
+  const fields = [
+    'medianMs',
+    'relativeMad',
+    'retainedHeapBytes',
+    'retainedHeapRelativeMad',
+    'bytes',
+    'chunks',
+    'repetitions',
+  ];
+
+  for (const field of fields) {
+    for (const value of [Number.POSITIVE_INFINITY, Number.NaN, -1]) {
+      const measurements = createValidMarkdownMeasurements();
+      measurements[0] = { ...measurements[0], [field]: value };
+
+      assert.throws(
+        () => createMarkdownBenchmarkReport(measurements, 3),
+        new RegExp(`invalid ${field}`, 'i'),
+      );
+    }
+  }
 });
 
 test('all Markdown chunkings materialize like a whole push of the same effective input', () => {
@@ -377,6 +513,19 @@ function hasLoneSurrogate(input) {
     }
   }
   return false;
+}
+
+function createValidMarkdownMeasurements() {
+  return markdownScenarios.map((scenario, index) => ({
+    ...scenario,
+    bytes: 1_000 + index,
+    chunks: 1 + index,
+    repetitions: 3 + index,
+    medianMs: 0.1 + index,
+    relativeMad: 0.01,
+    retainedHeapBytes: 2_000 + index,
+    retainedHeapRelativeMad: 0.02,
+  }));
 }
 
 function instrumentPartialMarkdown() {
