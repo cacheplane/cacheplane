@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.12 — 2026-09-02
+
+### Performance
+
+- Plain alphanumeric text streaming into an active table cell now updates the
+  existing text node without rebuilding and reconciling the full projected
+  table.
+- Eligible updates preserve table, row, and cell child-array identities;
+  structural syntax, whitespace, links, and inline Markdown continue through
+  canonical reconciliation.
+
 ## 0.5.11 — 2026-09-02
 
 ### Fixed
