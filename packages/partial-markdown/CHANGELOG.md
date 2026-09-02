@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.11 — 2026-09-02
+
+### Fixed
+
+- Calls to `push()` after a parser finishes or fails are now no-ops that
+  preserve the completed tree and emit no events.
+- Literal URL, `www.`, and email autolinks now remain chunk-invariant when
+  their prefixes or first complete token cross `push()` boundaries.
+- Citation references retain their parser-assigned numbering across inline
+  siblings and citation-definition sidecars.
+- Materialized snapshots now invalidate for scalar, nested-object, array,
+  child-order, and sidecar changes without version-key collisions.
+- Unchanged children, citation definitions, and link definitions retain their
+  snapshot identities when adjacent content changes.
+
 ## 0.5.10 — 2026-08-18
 
 ### Added
