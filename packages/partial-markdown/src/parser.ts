@@ -52,6 +52,7 @@ interface PublicEntry {
 
 const STRUCTURAL_AST_KEYS = new Set(['id', 'kind', 'parentId', 'status', 'children']);
 const INLINE_REINTERPRET_RE = /[\\*_~`\[\]!()<>$\r\n]/;
+const INCREMENTAL_TABLE_TEXT_RE = /^[A-Za-z0-9]+$/;
 const INDENTED_CODE_RE = /^(?: {4}|\t)/;
 const TABLE_HEADER_PREFIX_RE = /^ {0,3}\|[^|]*\|/;
 const POSSIBLE_HTML_BLOCK_RE = /^ {0,3}</;
@@ -358,9 +359,88 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
   }
 
   function updateIncrementalPlainText(entry: PublicEntry, delta: string): ParseEvent[] {
-    entry.visible.ast = { ...entry.visible.ast, text: state.lineBuffer } as AstNode;
-    (entry.node as MarkdownNode & { text: string }).text = state.lineBuffer;
-    entry.scalars.text = state.lineBuffer;
+    return updateIncrementalText(entry, state.lineBuffer, delta);
+  }
+
+  function incrementalTableTextEntry(
+    chunk: string,
+    literalAutolinkCompleted: boolean,
+  ): PublicEntry | null {
+    if (
+      literalAutolinkCompleted ||
+      !INCREMENTAL_TABLE_TEXT_RE.test(chunk) ||
+      state.complete ||
+      state.mode !== 'table' ||
+      state.currentNodeId === null ||
+      state.lineBuffer.length === 0 ||
+      rootEntry === null ||
+      publicRoot !== rootEntry.node
+    ) {
+      return null;
+    }
+
+    const table = trailingEntryByParserId(rootEntry, state.currentNodeId);
+    if (
+      table === null ||
+      table.node.type !== 'table' ||
+      table.visible.ast.kind !== 'table' ||
+      table.node.status !== 'streaming' ||
+      table.visible.status !== 'streaming'
+    ) {
+      return null;
+    }
+
+    const row = table.children[table.children.length - 1];
+    if (
+      !row ||
+      row.node.type !== 'table-row' ||
+      row.visible.ast.kind !== 'table-row' ||
+      row.node.status !== 'streaming' ||
+      row.visible.status !== 'streaming'
+    ) {
+      return null;
+    }
+
+    const cell = findLastEntryWithChildren(row.children);
+    if (
+      !cell ||
+      cell.node.type !== 'table-cell' ||
+      cell.visible.ast.kind !== 'table-cell' ||
+      cell.node.status !== 'streaming' ||
+      cell.visible.status !== 'streaming' ||
+      cell.children.length !== 1
+    ) {
+      return null;
+    }
+
+    const text = cell.children[0]!;
+    const currentText = text.scalars.text;
+    if (
+      text.node.type !== 'text' ||
+      text.visible.ast.kind !== 'text' ||
+      text.node.status !== 'streaming' ||
+      text.visible.status !== 'streaming' ||
+      text.children.length !== 0 ||
+      typeof currentText !== 'string' ||
+      !INCREMENTAL_TABLE_TEXT_RE.test(currentText) ||
+      text.visible.ast.text !== currentText ||
+      text.node.text !== currentText ||
+      !state.lineBuffer.endsWith(currentText)
+    ) {
+      return null;
+    }
+
+    return text;
+  }
+
+  function updateIncrementalText(
+    entry: PublicEntry,
+    text: string,
+    delta: string,
+  ): ParseEvent[] {
+    entry.visible.ast = { ...entry.visible.ast, text } as AstNode;
+    (entry.node as MarkdownNode & { text: string }).text = text;
+    entry.scalars.text = text;
     return [{ type: 'value-updated', node: entry.node, delta }];
   }
 
@@ -369,8 +449,15 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
       if (chunk.length === 0 || state.complete || state.error) return [];
       const literalAutolinkCompleted = literalAutolinkScanner.consume(chunk);
       const incrementalText = incrementalPlainTextEntry(chunk, literalAutolinkCompleted);
+      const incrementalTableText = incrementalText
+        ? null
+        : incrementalTableTextEntry(chunk, literalAutolinkCompleted);
       state = pushInternal(state, chunk);
       if (incrementalText) return updateIncrementalPlainText(incrementalText, chunk);
+      if (incrementalTableText) {
+        const text = incrementalTableText.scalars.text as string;
+        return updateIncrementalText(incrementalTableText, text + chunk, chunk);
+      }
       return reconcile();
     },
     finish(): ParseEvent[] {
@@ -613,6 +700,23 @@ function wouldMatchBlockPrefix(line: string, chunk: string, state: InternalState
     (state.options.math.bracket && DISPLAY_BRACKET_MATH_RE.test(line)) ||
     (POSSIBLE_HTML_BLOCK_RE.test(line) && detectHtmlBlockStart(line) !== null)
   );
+}
+
+function trailingEntryByParserId(root: PublicEntry, parserId: number): PublicEntry | null {
+  let entry: PublicEntry | undefined = root;
+  while (entry) {
+    if (entry.visible.parserId === parserId) return entry;
+    entry = entry.children[entry.children.length - 1];
+  }
+  return null;
+}
+
+function findLastEntryWithChildren(entries: PublicEntry[]): PublicEntry | null {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]!;
+    if (entry.children.length > 0) return entry;
+  }
+  return null;
 }
 
 function visiblePreOrder(root: VisibleNode): VisibleNode[] {
