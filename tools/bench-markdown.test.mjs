@@ -1,11 +1,19 @@
 // SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
+  assertMarkdownComparisonOutputsEquivalent,
+  classifyMarkdownPairedMeasurements,
+  createMarkdownComparisonReport,
   createMarkdownBenchmarkReport,
   formatMarkdownBenchmarkProgress,
+  markdownComparisonExitCode,
+  markdownComparisonCalibrationDuration,
+  markdownComparisonWorkerError,
+  markdownComparisonWorkerTimeoutMs,
   markdownBenchmarkWorkerError,
   markdownBenchmarkWorkerTimeoutMs,
   markdownMeasurementKey,
@@ -13,7 +21,11 @@ import {
   markdownScenarios,
   measureMarkdownRetainedHeapSample,
   parseMarkdownBenchmarkOptions,
+  parseMarkdownComparisonOptions,
+  parseMarkdownComparisonWorkerArguments,
   parseMarkdownWorkerArguments,
+  selectMarkdownComparisonRetries,
+  serializeMarkdownComparisonReport,
 } from './bench-markdown-lib.mjs';
 import {
   createPreparedMaterializeRun,
@@ -26,6 +38,18 @@ import {
 } from './fixtures/markdown-workloads.mjs';
 
 const partialMarkdown = await import('../packages/partial-markdown/dist/index.mjs');
+
+test('defines the paired Markdown comparison package script', () => {
+  const packageJson = JSON.parse(readFileSync(
+    new URL('../package.json', import.meta.url),
+    'utf8',
+  ));
+
+  assert.equal(
+    packageJson.scripts['bench:markdown:compare'],
+    'node tools/bench-markdown-compare.mjs',
+  );
+});
 
 test('defines the exact Markdown workload names', () => {
   const names = markdownWorkloads.map((workload) => workload.name);
@@ -222,6 +246,56 @@ test('rejects invalid Markdown benchmark option values', () => {
   }
 });
 
+test('parses the exact Markdown comparison CLI with stable defaults', () => {
+  const defaults = parseMarkdownComparisonOptions(['baseline', 'candidate']);
+  const configured = parseMarkdownComparisonOptions([
+    '/tmp/baseline',
+    '/tmp/candidate',
+    '--samples',
+    '101',
+    '--output',
+    '/tmp/markdown-comparison.json',
+  ]);
+
+  assert.deepEqual(defaults, {
+    baselineRoot: 'baseline',
+    candidateRoot: 'candidate',
+    samples: 31,
+    output: undefined,
+  });
+  assert.deepEqual(configured, {
+    baselineRoot: '/tmp/baseline',
+    candidateRoot: '/tmp/candidate',
+    samples: 101,
+    output: '/tmp/markdown-comparison.json',
+  });
+});
+
+test('rejects invalid Markdown comparison CLI arguments', () => {
+  const invalidArguments = [
+    [],
+    ['baseline'],
+    ['--', 'baseline', 'candidate'],
+    ['baseline', 'candidate', '--unknown', 'value'],
+    ['baseline', 'candidate', '--samples'],
+    ['baseline', 'candidate', '--samples', '--output', 'report.json'],
+    ['baseline', 'candidate', '--samples', '29'],
+    ['baseline', 'candidate', '--samples', '30.5'],
+    ['baseline', 'candidate', '--samples', '31', '--samples', '101'],
+    ['baseline', 'candidate', '--output'],
+    ['baseline', 'candidate', '--output', '--samples', '31'],
+    ['baseline', 'candidate', '--output', 'a.json', '--output', 'b.json'],
+  ];
+
+  for (const args of invalidArguments) {
+    assert.throws(
+      () => parseMarkdownComparisonOptions(args),
+      /comparison|root|unknown|option value|duplicate|integer >= 30/i,
+      args.join(' '),
+    );
+  }
+});
+
 test('parses every exact Markdown worker scenario', () => {
   for (const scenario of markdownScenarios) {
     const parsed = parseMarkdownWorkerArguments([
@@ -258,6 +332,47 @@ test('rejects invalid Markdown worker arguments', () => {
   }
 });
 
+test('parses every exact Markdown comparison worker scenario', () => {
+  for (const scenario of markdownScenarios) {
+    const parsed = parseMarkdownComparisonWorkerArguments([
+      '/tmp/baseline',
+      '/tmp/candidate',
+      scenario.implementation,
+      scenario.workload,
+      scenario.chunking,
+      '30',
+    ]);
+
+    assert.deepEqual(parsed, {
+      baselineRoot: '/tmp/baseline',
+      candidateRoot: '/tmp/candidate',
+      ...scenario,
+      samples: 30,
+    });
+  }
+});
+
+test('rejects invalid Markdown comparison worker arguments', () => {
+  const invalidArguments = [
+    [],
+    ['/tmp/baseline', '/tmp/candidate', 'events', 'mixed', 'whole'],
+    ['/tmp/baseline', '/tmp/candidate', 'events', 'mixed', 'whole', '30', 'extra'],
+    ['', '/tmp/candidate', 'events', 'mixed', 'whole', '30'],
+    ['/tmp/baseline', '', 'events', 'mixed', 'whole', '30'],
+    ['/tmp/baseline', '/tmp/candidate', 'unknown', 'mixed', 'whole', '30'],
+    ['/tmp/baseline', '/tmp/candidate', 'events', 'mixed', 'whole', '29'],
+    ['/tmp/baseline', '/tmp/candidate', 'events', 'mixed', 'whole', '30.5'],
+  ];
+
+  for (const args of invalidArguments) {
+    assert.throws(
+      () => parseMarkdownComparisonWorkerArguments(args),
+      /comparison worker arguments|integer >= 30/i,
+      args.join(' '),
+    );
+  }
+});
+
 test('formats Markdown benchmark progress with the completed index and scenario key', () => {
   const progress = formatMarkdownBenchmarkProgress(1, 48, markdownScenarios[0]);
 
@@ -278,6 +393,23 @@ test('reports the five-minute Markdown worker timeout clearly', () => {
   assert.match(
     error.message,
     /events\/mixed\/whole timed out after 300000ms/i,
+  );
+});
+
+test('reports the one-hour Markdown comparison worker timeout clearly', () => {
+  const timeoutError = Object.assign(new Error('spawnSync node ETIMEDOUT'), {
+    code: 'ETIMEDOUT',
+  });
+
+  const error = markdownComparisonWorkerError(
+    { error: timeoutError, status: null, stderr: '' },
+    markdownScenarios[0],
+  );
+
+  assert.equal(markdownComparisonWorkerTimeoutMs, 3_600_000);
+  assert.match(
+    error.message,
+    /events\/mixed\/whole timed out after 3600000ms/i,
   );
 });
 
@@ -314,6 +446,60 @@ test('Markdown benchmark worker emits one valid measurement as JSON', () => {
     'relativeMad',
     'retainedHeapBytes',
     'retainedHeapRelativeMad',
+  ]) {
+    assert.ok(Number.isFinite(measurement[field]), field);
+    assert.ok(measurement[field] >= 0, field);
+  }
+});
+
+test('Markdown comparison worker emits one valid paired measurement as JSON', () => {
+  const workerPath = fileURLToPath(
+    new URL('./bench-markdown-compare-worker.mjs', import.meta.url),
+  );
+  const worktreeRoot = fileURLToPath(new URL('..', import.meta.url));
+
+  const worker = spawnSync(
+    process.execPath,
+    [
+      workerPath,
+      worktreeRoot,
+      worktreeRoot,
+      'events',
+      'deep-blockquote',
+      'whole',
+      '30',
+    ],
+    { encoding: 'utf8', timeout: markdownComparisonWorkerTimeoutMs },
+  );
+
+  assert.equal(worker.status, 0, worker.stderr);
+  assert.equal(worker.stderr, '');
+  const measurement = JSON.parse(worker.stdout);
+  assert.deepEqual(
+    {
+      implementation: measurement.implementation,
+      workload: measurement.workload,
+      chunking: measurement.chunking,
+      samples: measurement.samples,
+    },
+    {
+      implementation: 'events',
+      workload: 'deep-blockquote',
+      chunking: 'whole',
+      samples: 30,
+    },
+  );
+  for (const field of ['bytes', 'chunks', 'samples', 'repetitions']) {
+    assert.ok(Number.isInteger(measurement[field]), field);
+    assert.ok(measurement[field] > 0, field);
+  }
+  for (const field of [
+    'baselineMedianMs',
+    'candidateMedianMs',
+    'medianRatio',
+    'lowerRatio',
+    'upperRatio',
+    'ratioRelativeMad',
   ]) {
     assert.ok(Number.isFinite(measurement[field]), field);
     assert.ok(measurement[field] >= 0, field);
@@ -404,6 +590,157 @@ test('rejects non-positive or fractional Markdown measurement counts', () => {
       );
     }
   }
+});
+
+test('creates and serializes a schema-v1 Markdown comparison report', () => {
+  const measurements = createValidMarkdownComparisonMeasurements();
+
+  const report = createMarkdownComparisonReport(measurements, 31);
+  const serialized = serializeMarkdownComparisonReport(report);
+
+  assert.deepEqual(report, {
+    schemaVersion: 1,
+    runtime: process.version,
+    platform: `${process.platform}-${process.arch}`,
+    initialSamples: 31,
+    maxRegression: 0.10,
+    measurements,
+  });
+  assert.equal(report.measurements.length, 48);
+  assert.equal(new Set(report.measurements.map(markdownMeasurementKey)).size, 48);
+  assert.ok(serialized.endsWith('\n'));
+  assert.deepEqual(JSON.parse(serialized), report);
+});
+
+test('rejects invalid Markdown comparison reports', () => {
+  const measurements = createValidMarkdownComparisonMeasurements();
+  const unexpected = { ...measurements[0], implementation: 'unexpected' };
+
+  assert.throws(
+    () => createMarkdownComparisonReport(measurements.slice(1), 31),
+    /measurement keys/i,
+  );
+  assert.throws(
+    () => createMarkdownComparisonReport([
+      measurements[0],
+      ...measurements.slice(0, -1),
+    ], 31),
+    /duplicate measurement keys/i,
+  );
+  assert.throws(
+    () => createMarkdownComparisonReport([unexpected, ...measurements.slice(1)], 31),
+    /measurement keys/i,
+  );
+  for (const initialSamples of [Number.NaN, 0, 29, 31.5]) {
+    assert.throws(
+      () => createMarkdownComparisonReport(measurements, initialSamples),
+      /initial samples.*integer >= 30/i,
+    );
+  }
+});
+
+test('rejects invalid Markdown paired measurement fields', () => {
+  const integerFields = ['samples', 'repetitions', 'bytes', 'chunks'];
+  const nonnegativeFields = [
+    'baselineMedianMs',
+    'candidateMedianMs',
+    'medianRatio',
+    'lowerRatio',
+    'upperRatio',
+    'ratioRelativeMad',
+  ];
+
+  for (const field of integerFields) {
+    for (const value of [Number.POSITIVE_INFINITY, Number.NaN, -1, 0, 1.5]) {
+      const measurements = createValidMarkdownComparisonMeasurements();
+      measurements[0] = { ...measurements[0], [field]: value };
+
+      assert.throws(
+        () => createMarkdownComparisonReport(measurements, 31),
+        new RegExp(`invalid ${field}`, 'i'),
+      );
+    }
+  }
+  for (const field of nonnegativeFields) {
+    for (const value of [Number.POSITIVE_INFINITY, Number.NaN, -1]) {
+      const measurements = createValidMarkdownComparisonMeasurements();
+      measurements[0] = { ...measurements[0], [field]: value };
+
+      assert.throws(
+        () => createMarkdownComparisonReport(measurements, 31),
+        new RegExp(`invalid ${field}`, 'i'),
+      );
+    }
+  }
+});
+
+test('classifies Markdown paired measurements at the 10% regression threshold', () => {
+  const passed = pairedMeasurement({ lowerRatio: 1.01, upperRatio: 1.10 });
+  const inconclusive = pairedMeasurement({ lowerRatio: 1.10, upperRatio: 1.11 });
+  const regression = pairedMeasurement({ lowerRatio: 1.100001, upperRatio: 1.20 });
+
+  const classification = classifyMarkdownPairedMeasurements([
+    passed,
+    inconclusive,
+    regression,
+  ]);
+
+  assert.deepEqual(classification, {
+    passed: [passed],
+    inconclusive: [inconclusive],
+    regressions: [regression],
+  });
+});
+
+test('selects every non-passing Markdown measurement for retry', () => {
+  const passed = pairedMeasurement({ implementation: 'events', upperRatio: 1.05 });
+  const inconclusive = pairedMeasurement({ implementation: 'final-materialize' });
+  const regression = pairedMeasurement({
+    implementation: 'materialize-each',
+    lowerRatio: 1.11,
+    upperRatio: 1.20,
+  });
+
+  const retries = selectMarkdownComparisonRetries([
+    passed,
+    inconclusive,
+    regression,
+  ]);
+
+  assert.deepEqual(retries, [inconclusive, regression]);
+});
+
+test('returns Markdown comparison exit codes by final severity', () => {
+  assert.equal(markdownComparisonExitCode({ regressions: [{}], inconclusive: [{}] }), 1);
+  assert.equal(markdownComparisonExitCode({ regressions: [], inconclusive: [{}] }), 2);
+  assert.equal(markdownComparisonExitCode({ regressions: [], inconclusive: [] }), 0);
+});
+
+test('calibrates paired Markdown repetitions from the slower five-run median', () => {
+  const duration = markdownComparisonCalibrationDuration(
+    [0.19, 0.20, 0.21, 0.22, 5.00],
+    [0.24, 0.25, 0.26, 0.27, 0.28],
+  );
+
+  assert.equal(duration, 0.26);
+});
+
+test('asserts Markdown comparison output equivalence with scenario context', () => {
+  const scenario = markdownScenarios[0];
+
+  assert.doesNotThrow(() => assertMarkdownComparisonOutputsEquivalent(
+    { type: 'document', children: [] },
+    { type: 'document', children: [] },
+    scenario,
+  ));
+  assert.throws(
+    () => assertMarkdownComparisonOutputsEquivalent(
+      { type: 'document', children: [] },
+      { type: 'document', children: [{ type: 'paragraph' }] },
+      scenario,
+    ),
+    /events\/mixed\/whole.*outputs differ/i,
+  );
 });
 
 test('reports retained-heap instability when a zero median hides positive samples', () => {
@@ -721,6 +1058,33 @@ function createValidMarkdownMeasurements() {
     retainedHeapBytes: 2_000 + index,
     retainedHeapRelativeMad: 0.02,
   }));
+}
+
+function createValidMarkdownComparisonMeasurements() {
+  return markdownScenarios.map((scenario, index) => ({
+    ...scenario,
+    bytes: 1_000 + index,
+    chunks: 1 + index,
+    samples: index === 0 ? 31 : 101,
+    repetitions: 3 + index,
+    baselineMedianMs: 0.1 + index,
+    candidateMedianMs: 0.1 + index,
+    medianRatio: 1,
+    lowerRatio: 0.99,
+    upperRatio: 1.01,
+    ratioRelativeMad: 0.01,
+  }));
+}
+
+function pairedMeasurement(overrides = {}) {
+  return {
+    implementation: 'events',
+    workload: 'mixed',
+    chunking: 'whole',
+    lowerRatio: 1.05,
+    upperRatio: 1.15,
+    ...overrides,
+  };
 }
 
 function instrumentPartialMarkdown() {

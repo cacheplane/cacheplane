@@ -13,6 +13,7 @@
     "bench:json": "pnpm --filter @cacheplane/json-stream build && pnpm --filter @cacheplane/partial-json build && node tools/bench-json.mjs",
     "bench:json:compare": "node tools/bench-json-compare.mjs",
     "bench:markdown": "pnpm --filter @cacheplane/partial-markdown build && node tools/bench-markdown.mjs",
+    "bench:markdown:compare": "node tools/bench-markdown-compare.mjs",
     "check:partial-json-package": "node tools/check-partial-json-package.mjs",
     "test": "pnpm -r --workspace-concurrency=1 --filter './packages/*' test && node --test tools/bench-json.test.mjs",
     "test:coverage": "pnpm -r --workspace-concurrency=1 --filter './packages/*' test:coverage",

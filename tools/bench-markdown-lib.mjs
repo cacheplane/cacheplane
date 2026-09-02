@@ -3,6 +3,7 @@ import {
   median,
   relativeMedianAbsoluteDeviation,
 } from './bench-lib.mjs';
+import { isDeepStrictEqual } from 'node:util';
 import {
   markdownChunkers,
   markdownWorkloads,
@@ -38,6 +39,9 @@ export const markdownScenarios = Object.freeze([
 /** Maximum duration allowed for one isolated Markdown benchmark worker. */
 export const markdownBenchmarkWorkerTimeoutMs = 300_000;
 
+/** Maximum duration allowed for one paired Markdown comparison worker. */
+export const markdownComparisonWorkerTimeoutMs = 3_600_000;
+
 const markdownScenarioKeys = new Set(markdownScenarios.map(markdownMeasurementKey));
 const measurementNonnegativeFields = Object.freeze([
   'medianMs',
@@ -49,6 +53,20 @@ const measurementPositiveIntegerFields = Object.freeze([
   'bytes',
   'chunks',
   'repetitions',
+]);
+const comparisonMeasurementNonnegativeFields = Object.freeze([
+  'baselineMedianMs',
+  'candidateMedianMs',
+  'medianRatio',
+  'lowerRatio',
+  'upperRatio',
+  'ratioRelativeMad',
+]);
+const comparisonMeasurementPositiveIntegerFields = Object.freeze([
+  'samples',
+  'repetitions',
+  'bytes',
+  'chunks',
 ]);
 
 /**
@@ -177,6 +195,57 @@ export function parseMarkdownBenchmarkOptions(args) {
 }
 
 /**
+ * Parses the exact positional CLI for paired Markdown worktree comparisons.
+ *
+ * @param {string[]} args Command-line arguments after the script path.
+ * @returns {{ baselineRoot: string, candidateRoot: string, samples: number, output: string | undefined }} Parsed comparison options.
+ */
+export function parseMarkdownComparisonOptions(args) {
+  if (args[0] === '--') {
+    throw new Error('Markdown comparison does not accept a leading --');
+  }
+  if (args.length < 2 || args[0].startsWith('--') || args[1].startsWith('--')) {
+    throw new Error('Markdown comparison requires baseline and candidate roots');
+  }
+
+  const [baselineRoot, candidateRoot, ...options] = args;
+  if (!baselineRoot || !candidateRoot) {
+    throw new Error('Markdown comparison requires baseline and candidate roots');
+  }
+
+  let samples = 31;
+  let output;
+  const seen = new Set();
+  for (let index = 0; index < options.length; index += 1) {
+    const option = options[index];
+    if (option !== '--samples' && option !== '--output') {
+      throw new Error(`Unknown Markdown comparison option: ${option}`);
+    }
+    if (seen.has(option)) {
+      throw new Error(`Duplicate Markdown comparison option: ${option}`);
+    }
+    seen.add(option);
+
+    const value = options[index + 1];
+    if (value === undefined || value.startsWith('--')) {
+      throw new Error(`${option} requires an option value`);
+    }
+    index += 1;
+
+    if (option === '--samples') {
+      samples = Number(value);
+    } else {
+      output = value;
+    }
+  }
+
+  if (!Number.isInteger(samples) || samples < 30) {
+    throw new Error('--samples must be an integer >= 30');
+  }
+  return { baselineRoot, candidateRoot, samples, output };
+}
+
+/**
  * Parses and validates a Markdown benchmark worker scenario.
  *
  * @param {string[]} args Worker arguments after the script path.
@@ -196,6 +265,37 @@ export function parseMarkdownWorkerArguments(args) {
     throw new Error(`Invalid Markdown benchmark worker arguments: ${key}`);
   }
   return { implementation, workload, chunking, samples };
+}
+
+/**
+ * Parses and validates one paired Markdown comparison worker scenario.
+ *
+ * @param {string[]} args Worker arguments after the script path.
+ * @returns {{ baselineRoot: string, candidateRoot: string, implementation: string, workload: string, chunking: string, samples: number }} Validated worker arguments.
+ */
+export function parseMarkdownComparisonWorkerArguments(args) {
+  if (args.length !== 6) {
+    throw new Error('Invalid Markdown comparison worker arguments');
+  }
+
+  const [baselineRoot, candidateRoot, implementation, workload, chunking, rawSamples] = args;
+  const samples = Number(rawSamples);
+  if (!Number.isInteger(samples) || samples < 30) {
+    throw new Error('Markdown comparison worker samples must be an integer >= 30');
+  }
+
+  const key = markdownMeasurementKey({ implementation, workload, chunking });
+  if (!baselineRoot || !candidateRoot || !markdownScenarioKeys.has(key)) {
+    throw new Error(`Invalid Markdown comparison worker arguments: ${key}`);
+  }
+  return {
+    baselineRoot,
+    candidateRoot,
+    implementation,
+    workload,
+    chunking,
+    samples,
+  };
 }
 
 /**
@@ -245,6 +345,179 @@ export function createMarkdownBenchmarkReport(measurements, samples) {
     samples,
     measurements,
   };
+}
+
+/**
+ * Validates paired Markdown measurements and creates the stable schema-v1 report.
+ *
+ * @param {object[]} measurements Paired scenario measurements from isolated workers.
+ * @param {number} initialSamples Initial timing samples requested from each worker.
+ * @returns {{ schemaVersion: 1, runtime: string, platform: string, initialSamples: number, maxRegression: 0.1, measurements: object[] }} Markdown comparison report.
+ */
+export function createMarkdownComparisonReport(measurements, initialSamples) {
+  if (!Number.isInteger(initialSamples) || initialSamples < 30) {
+    throw new Error('Markdown comparison report initial samples must be an integer >= 30');
+  }
+
+  validateMarkdownMeasurementKeys(measurements, 'comparison report');
+  for (const measurement of measurements) {
+    validateMeasurementFields(
+      measurement,
+      comparisonMeasurementNonnegativeFields,
+      comparisonMeasurementPositiveIntegerFields,
+      'comparison measurement',
+    );
+  }
+
+  return {
+    schemaVersion: 1,
+    runtime: process.version,
+    platform: `${process.platform}-${process.arch}`,
+    initialSamples,
+    maxRegression: 0.10,
+    measurements,
+  };
+}
+
+/**
+ * Serializes a Markdown comparison report with stable readable formatting.
+ *
+ * @param {object} report Validated comparison report.
+ * @returns {string} Newline-terminated JSON.
+ */
+export function serializeMarkdownComparisonReport(report) {
+  return `${JSON.stringify(report, null, 2)}\n`;
+}
+
+/**
+ * Classifies paired Markdown measurements against the fixed 10% regression limit.
+ *
+ * @param {object[]} measurements Paired Markdown measurements.
+ * @returns {{ passed: object[], inconclusive: object[], regressions: object[] }} Measurements grouped by final status.
+ */
+export function classifyMarkdownPairedMeasurements(measurements) {
+  const threshold = 1.10;
+  return {
+    passed: measurements.filter((entry) => entry.upperRatio <= threshold),
+    inconclusive: measurements.filter(
+      (entry) => entry.lowerRatio <= threshold && entry.upperRatio > threshold,
+    ),
+    regressions: measurements.filter((entry) => entry.lowerRatio > threshold),
+  };
+}
+
+/**
+ * Selects all paired Markdown measurements that have not passed.
+ *
+ * @param {object[]} measurements Paired Markdown measurements in report order.
+ * @returns {object[]} Non-passing measurements in report order.
+ */
+export function selectMarkdownComparisonRetries(measurements) {
+  return measurements.filter((entry) => entry.upperRatio > 1.10);
+}
+
+/**
+ * Returns the process exit code for a final Markdown comparison classification.
+ *
+ * @param {{ regressions: object[], inconclusive: object[] }} classification Final classification.
+ * @returns {0 | 1 | 2} Zero for pass, one for regression, or two for inconclusive.
+ */
+export function markdownComparisonExitCode(classification) {
+  if (classification.regressions.length > 0) return 1;
+  if (classification.inconclusive.length > 0) return 2;
+  return 0;
+}
+
+/**
+ * Selects the slower robust duration from paired five-run calibrations.
+ *
+ * @param {number[]} baselineDurations Baseline calibration durations.
+ * @param {number[]} candidateDurations Candidate calibration durations.
+ * @returns {number} Slower median calibration duration.
+ */
+export function markdownComparisonCalibrationDuration(
+  baselineDurations,
+  candidateDurations,
+) {
+  return Math.max(median(baselineDurations), median(candidateDurations));
+}
+
+/**
+ * Asserts that baseline and candidate produce deeply equivalent output.
+ *
+ * @param {unknown} baselineOutput Baseline scenario output.
+ * @param {unknown} candidateOutput Candidate scenario output.
+ * @param {{ implementation: string, workload: string, chunking: string }} scenario Compared scenario.
+ * @returns {void}
+ */
+export function assertMarkdownComparisonOutputsEquivalent(
+  baselineOutput,
+  candidateOutput,
+  scenario,
+) {
+  if (!isDeepStrictEqual(baselineOutput, candidateOutput)) {
+    throw new Error(
+      `Markdown comparison ${markdownMeasurementKey(scenario)} outputs differ between baseline and candidate`,
+    );
+  }
+}
+
+/**
+ * Converts an unsuccessful paired worker result into a scenario-specific error.
+ *
+ * @param {{ error?: Error & { code?: string }, status: number | null, signal?: string | null, stderr?: string }} worker Worker process result.
+ * @param {{ implementation: string, workload: string, chunking: string }} scenario Worker scenario.
+ * @returns {Error | null} Worker failure, or null for a successful exit.
+ */
+export function markdownComparisonWorkerError(worker, scenario) {
+  const key = markdownMeasurementKey(scenario);
+  if (worker.error?.code === 'ETIMEDOUT') {
+    return new Error(
+      `Markdown comparison worker ${key} timed out after ${markdownComparisonWorkerTimeoutMs}ms`,
+    );
+  }
+  if (worker.error) {
+    return new Error(
+      `Markdown comparison worker ${key} failed to start: ${worker.error.message}`,
+    );
+  }
+  if (worker.status !== 0) {
+    const detail = worker.stderr?.trim() || (
+      worker.signal ? `terminated by signal ${worker.signal}` : `exited with status ${worker.status}`
+    );
+    return new Error(`Markdown comparison worker ${key} failed: ${detail}`);
+  }
+  return null;
+}
+
+function validateMarkdownMeasurementKeys(measurements, reportName) {
+  const keys = measurements.map(markdownMeasurementKey);
+  if (new Set(keys).size !== keys.length) {
+    throw new Error(`Markdown ${reportName} contains duplicate measurement keys`);
+  }
+  if (
+    keys.length !== markdownScenarios.length ||
+    keys.some((key) => !markdownScenarioKeys.has(key))
+  ) {
+    throw new Error(`Markdown ${reportName} measurement keys do not match expected scenarios`);
+  }
+}
+
+function validateMeasurementFields(measurement, nonnegativeFields, positiveIntegerFields, label) {
+  for (const field of nonnegativeFields) {
+    if (!Number.isFinite(measurement[field]) || measurement[field] < 0) {
+      throw new Error(
+        `Markdown ${label} ${markdownMeasurementKey(measurement)} has invalid ${field}`,
+      );
+    }
+  }
+  for (const field of positiveIntegerFields) {
+    if (!Number.isInteger(measurement[field]) || measurement[field] <= 0) {
+      throw new Error(
+        `Markdown ${label} ${markdownMeasurementKey(measurement)} has invalid ${field}`,
+      );
+    }
+  }
 }
 
 function freezeScenario(implementation, workload, chunking) {
