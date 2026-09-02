@@ -6,10 +6,16 @@ import {
   markdownScenarios,
 } from './bench-markdown-lib.mjs';
 import {
+  createPreparedMaterializeRun,
+  createSourceRun,
+} from './bench-markdown-runtime.mjs';
+import {
   chunksForMarkdownWorkload,
   markdownChunkers,
   markdownWorkloads,
 } from './fixtures/markdown-workloads.mjs';
+
+const partialMarkdown = await import('../packages/partial-markdown/dist/index.mjs');
 
 test('defines the exact Markdown workload names', () => {
   const names = markdownWorkloads.map((workload) => workload.name);
@@ -156,6 +162,217 @@ test('defines exactly 48 unique Markdown benchmark scenarios', () => {
   assert.deepEqual([...keys].sort(), [...expectedKeys].sort());
 });
 
+test('all Markdown chunkings materialize like a whole push of the same effective input', () => {
+  let comparisons = 0;
+
+  for (const workload of markdownWorkloads) {
+    for (const chunker of markdownChunkers) {
+      const { input, chunks } = chunksForMarkdownWorkload(workload, chunker);
+      const chunkedParser = partialMarkdown.createPartialMarkdownParser();
+      const wholeParser = partialMarkdown.createPartialMarkdownParser();
+
+      for (const chunk of chunks) chunkedParser.push(chunk);
+      chunkedParser.finish();
+      wholeParser.push(input);
+      wholeParser.finish();
+
+      assert.deepEqual(
+        withoutParserAssignedIds(partialMarkdown.materialize(chunkedParser.root)),
+        withoutParserAssignedIds(partialMarkdown.materialize(wholeParser.root)),
+        `${workload.name}/${chunker.name}`,
+      );
+      comparisons += 1;
+    }
+  }
+
+  assert.equal(comparisons, 15);
+});
+
+test('complete whole-input workloads match their expected Markdown shapes', () => {
+  for (const workload of markdownWorkloads) {
+    const run = createSourceRun(partialMarkdown, 'final-materialize', [workload.input]);
+
+    const snapshot = run();
+
+    assert.deepEqual(
+      snapshot.children.map((node) => node.type),
+      workload.expectedShape.topLevelNodeTypes,
+      workload.name,
+    );
+    assert.ok(
+      snapshot.citations.size >= workload.expectedShape.minimumCitationCount,
+      workload.name,
+    );
+    assert.ok(
+      snapshot.linkDefinitions.size >= workload.expectedShape.minimumLinkDefinitionCount,
+      workload.name,
+    );
+  }
+});
+
+test('source runs create a parser per invocation and execute the selected materialization policy', () => {
+  const chunks = ['alpha', ' beta'];
+  const expectations = [
+    { implementation: 'events', materializeCalls: 0 },
+    { implementation: 'final-materialize', materializeCalls: 2 },
+    { implementation: 'materialize-each', materializeCalls: 6 },
+  ];
+
+  for (const expectation of expectations) {
+    const instrumented = instrumentPartialMarkdown();
+    const run = createSourceRun(
+      instrumented.module,
+      expectation.implementation,
+      chunks,
+    );
+
+    const first = run();
+    const second = run();
+
+    assert.equal(instrumented.parserCreations(), 2, expectation.implementation);
+    assert.equal(
+      instrumented.materializedRoots.length,
+      expectation.materializeCalls,
+      expectation.implementation,
+    );
+    assert.equal(first.type, 'document');
+    assert.equal(second.type, 'document');
+    assert.notEqual(first, second);
+  }
+});
+
+test('source runs reject unknown implementations', () => {
+  assert.throws(
+    () => createSourceRun(partialMarkdown, 'unknown', ['input']),
+    /unknown Markdown source implementation/i,
+  );
+});
+
+test('prepared unchanged runs parse and prime once then reuse snapshot identity', () => {
+  const workload = markdownWorkloads.find((entry) => entry.name === 'long-prose');
+  const instrumented = instrumentPartialMarkdown();
+
+  const run = createPreparedMaterializeRun(instrumented.module, 'unchanged', workload);
+  const first = run();
+  const second = run();
+  const third = run();
+
+  assert.equal(instrumented.parserCreations(), 1);
+  assert.equal(instrumented.materializedRoots.length, 4);
+  assert.equal(first, second);
+  assert.equal(second, third);
+  assert.equal(
+    new Set(instrumented.materializedRoots).size,
+    1,
+  );
+});
+
+test('prepared leaf-change runs alternate an equal-length text mutation on every invocation', () => {
+  const workload = markdownWorkloads.find((entry) => entry.name === 'long-prose');
+  const fixtureInput = workload.input;
+  const instrumented = instrumentPartialMarkdown();
+
+  const run = createPreparedMaterializeRun(instrumented.module, 'leaf-change', workload);
+  const first = run();
+  const second = run();
+  const third = run();
+  const fourth = run();
+  const values = [first, second, third, fourth].map((snapshot) => findText(snapshot).text);
+
+  assert.equal(instrumented.parserCreations(), 1);
+  assert.equal(instrumented.materializedRoots.length, 5);
+  assert.equal(new Set(instrumented.materializedRoots).size, 1);
+  assert.equal(workload.input, fixtureInput);
+  assert.notEqual(first, second);
+  assert.notEqual(second, third);
+  assert.notEqual(third, fourth);
+  assert.notEqual(values[0], values[1]);
+  assert.equal(values[0], values[2]);
+  assert.equal(values[1], values[3]);
+  assert.equal(values[0].length, values[1].length);
+});
+
+test('prepared citation-change runs replace only the changing citation source path', () => {
+  const workload = markdownWorkloads.find((entry) => entry.name === 'references');
+  const fixtureInput = workload.input;
+  const instrumented = instrumentPartialMarkdown();
+
+  const run = createPreparedMaterializeRun(instrumented.module, 'citation-change', workload);
+  const first = run();
+  const second = run();
+  const third = run();
+  const sourceRoots = instrumented.materializedRoots;
+  const changedCitationId = findChangedMapKey(sourceRoots[0].citations, sourceRoots[1].citations);
+  const values = [first, second, third].map((snapshot) => (
+    findText(snapshot.citations.get(changedCitationId)).text
+  ));
+
+  assert.equal(instrumented.parserCreations(), 1);
+  assert.equal(sourceRoots.length, 4);
+  assert.equal(workload.input, fixtureInput);
+  assert.notEqual(first, second);
+  assert.notEqual(second, third);
+  assert.notEqual(sourceRoots[0], sourceRoots[1]);
+  assert.notEqual(sourceRoots[1], sourceRoots[2]);
+  assert.notEqual(sourceRoots[2], sourceRoots[3]);
+  assert.notEqual(sourceRoots[0].citations, sourceRoots[1].citations);
+  assert.notEqual(sourceRoots[1].citations, sourceRoots[2].citations);
+  assert.notEqual(sourceRoots[2].citations, sourceRoots[3].citations);
+  assert.equal(sourceRoots[0].linkDefinitions, sourceRoots[1].linkDefinitions);
+  assert.equal(sourceRoots[1].linkDefinitions, sourceRoots[2].linkDefinitions);
+  assert.equal(sourceRoots[2].linkDefinitions, sourceRoots[3].linkDefinitions);
+  assert.equal(
+    findText(sourceRoots[0].citations.get(changedCitationId)),
+    findText(sourceRoots[1].citations.get(changedCitationId)),
+  );
+  assert.equal(
+    findText(sourceRoots[1].citations.get(changedCitationId)),
+    findText(sourceRoots[2].citations.get(changedCitationId)),
+  );
+  assert.equal(
+    findText(sourceRoots[2].citations.get(changedCitationId)),
+    findText(sourceRoots[3].citations.get(changedCitationId)),
+  );
+  assert.equal(values[0], values[2]);
+  assert.notEqual(values[0], values[1]);
+  assert.equal(values[0].length, values[1].length);
+
+  for (let index = 1; index < sourceRoots.length; index += 1) {
+    const previous = sourceRoots[index - 1].citations;
+    const current = sourceRoots[index].citations;
+
+    assert.notEqual(current.get(changedCitationId), previous.get(changedCitationId));
+    for (const [citationId, definition] of previous) {
+      if (citationId !== changedCitationId) {
+        assert.equal(current.get(citationId), definition);
+      }
+    }
+  }
+});
+
+test('prepared mutation runs reject missing targets and unknown implementations', () => {
+  assert.throws(
+    () => createPreparedMaterializeRun(
+      partialMarkdown,
+      'leaf-change',
+      { name: 'long-prose', input: '---\n' },
+    ),
+    /text leaf/i,
+  );
+  assert.throws(
+    () => createPreparedMaterializeRun(
+      partialMarkdown,
+      'citation-change',
+      { name: 'references', input: 'No citations.\n' },
+    ),
+    /citation-body text leaf/i,
+  );
+  assert.throws(
+    () => createPreparedMaterializeRun(partialMarkdown, 'unknown', markdownWorkloads[0]),
+    /unknown prepared Markdown implementation/i,
+  );
+});
+
 function hasLoneSurrogate(input) {
   for (let index = 0; index < input.length; index += 1) {
     const codeUnit = input.charCodeAt(index);
@@ -168,4 +385,58 @@ function hasLoneSurrogate(input) {
     }
   }
   return false;
+}
+
+function instrumentPartialMarkdown() {
+  let parserCreations = 0;
+  const materializedRoots = [];
+
+  return {
+    module: {
+      createPartialMarkdownParser(options) {
+        parserCreations += 1;
+        return partialMarkdown.createPartialMarkdownParser(options);
+      },
+      materialize(root) {
+        materializedRoots.push(root);
+        return partialMarkdown.materialize(root);
+      },
+    },
+    materializedRoots,
+    parserCreations: () => parserCreations,
+  };
+}
+
+function findText(value) {
+  if (value?.type === 'text') return value;
+  if (!Array.isArray(value?.children)) return null;
+
+  for (const child of value.children) {
+    const match = findText(child);
+    if (match) return match;
+  }
+  return null;
+}
+
+function findChangedMapKey(previous, current) {
+  const changedKeys = [...previous.keys()].filter((key) => (
+    previous.get(key) !== current.get(key)
+  ));
+
+  assert.equal(changedKeys.length, 1);
+  return changedKeys[0];
+}
+
+function withoutParserAssignedIds(value) {
+  if (Array.isArray(value)) return value.map(withoutParserAssignedIds);
+  if (value instanceof Map) {
+    return new Map([...value].map(([key, entry]) => [key, withoutParserAssignedIds(entry)]));
+  }
+  if (value === null || typeof value !== 'object') return value;
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key, entry]) => key !== 'id' || typeof entry !== 'number')
+      .map(([key, entry]) => [key, withoutParserAssignedIds(entry)]),
+  );
 }
