@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
+import { randomUUID } from 'node:crypto';
+import { rename, rm, writeFile } from 'node:fs/promises';
+import { isDeepStrictEqual } from 'node:util';
 import {
   median,
   relativeMedianAbsoluteDeviation,
   repetitionsForTargetDuration,
 } from './bench-lib.mjs';
-import { isDeepStrictEqual } from 'node:util';
 import {
   markdownChunkers,
   markdownWorkloads,
@@ -381,6 +383,44 @@ export function createMarkdownComparisonReport(measurements, initialSamples) {
 }
 
 /**
+ * Validates completed paired measurements and creates an incomplete progress document.
+ *
+ * @param {object[]} measurements Completed paired scenario measurements.
+ * @param {number} initialSamples Initial timing samples requested from each worker.
+ * @returns {{ kind: 'markdown-comparison-progress', status: 'incomplete', runtime: string, platform: string, initialSamples: number, completedMeasurements: object[] }} Markdown comparison progress.
+ */
+export function createMarkdownComparisonProgress(measurements, initialSamples) {
+  if (!Number.isInteger(initialSamples) || initialSamples < 30) {
+    throw new Error('Markdown comparison progress initial samples must be an integer >= 30');
+  }
+
+  const keys = measurements.map(markdownMeasurementKey);
+  if (new Set(keys).size !== keys.length) {
+    throw new Error('Markdown comparison progress contains duplicate measurement keys');
+  }
+  if (keys.some((key) => !markdownScenarioKeys.has(key))) {
+    throw new Error('Markdown comparison progress contains unexpected measurement keys');
+  }
+  for (const measurement of measurements) {
+    validateMeasurementFields(
+      measurement,
+      comparisonMeasurementNonnegativeFields,
+      comparisonMeasurementPositiveIntegerFields,
+      'comparison progress measurement',
+    );
+  }
+
+  return {
+    kind: 'markdown-comparison-progress',
+    status: 'incomplete',
+    runtime: process.version,
+    platform: `${process.platform}-${process.arch}`,
+    initialSamples,
+    completedMeasurements: measurements,
+  };
+}
+
+/**
  * Serializes a Markdown comparison report with stable readable formatting.
  *
  * @param {object} report Validated comparison report.
@@ -388,6 +428,34 @@ export function createMarkdownComparisonReport(measurements, initialSamples) {
  */
 export function serializeMarkdownComparisonReport(report) {
   return `${JSON.stringify(report, null, 2)}\n`;
+}
+
+/**
+ * Serializes Markdown comparison progress with stable readable formatting.
+ *
+ * @param {object} progress Validated comparison progress.
+ * @returns {string} Newline-terminated JSON.
+ */
+export function serializeMarkdownComparisonProgress(progress) {
+  return `${JSON.stringify(progress, null, 2)}\n`;
+}
+
+/**
+ * Atomically replaces a Markdown comparison output with serialized JSON.
+ *
+ * @param {string} output Output path.
+ * @param {string} serialized Newline-terminated JSON contents.
+ * @returns {Promise<void>} Resolves after the output path is replaced.
+ */
+export async function writeMarkdownComparisonOutputAtomically(output, serialized) {
+  const temporaryOutput = `${output}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryOutput, serialized);
+    await rename(temporaryOutput, output);
+  } catch (error) {
+    await rm(temporaryOutput, { force: true });
+    throw error;
+  }
 }
 
 /**

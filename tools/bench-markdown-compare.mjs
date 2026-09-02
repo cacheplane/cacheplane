@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 import { spawnSync } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { nextPairedSampleCount } from './bench-lib.mjs';
 import {
   classifyMarkdownPairedMeasurements,
+  createMarkdownComparisonProgress,
   createMarkdownComparisonReport,
   markdownComparisonExitCode,
   markdownComparisonWorkerError,
@@ -14,7 +14,9 @@ import {
   markdownScenarios,
   parseMarkdownComparisonOptions,
   selectMarkdownComparisonRetries,
+  serializeMarkdownComparisonProgress,
   serializeMarkdownComparisonReport,
+  writeMarkdownComparisonOutputAtomically,
 } from './bench-markdown-lib.mjs';
 
 const options = parseMarkdownComparisonOptions(process.argv.slice(2));
@@ -24,9 +26,11 @@ const workerPath = fileURLToPath(
   new URL('./bench-markdown-compare-worker.mjs', import.meta.url),
 );
 const measurements = [];
+await writeProgressCheckpoint();
 
 for (const [index, scenario] of markdownScenarios.entries()) {
   measurements.push(runWorker(scenario, options.samples));
+  await writeProgressCheckpoint();
   printProgress('initial', index + 1, markdownScenarios.length, scenario, options.samples);
 }
 
@@ -41,6 +45,7 @@ while (retries.length > 0 && retrySamples !== null) {
       (entry) => markdownMeasurementKey(entry) === markdownMeasurementKey(scenario),
     );
     measurements[measurementIndex] = runWorker(scenario, retrySamples);
+    await writeProgressCheckpoint();
     printProgress('retry', index + 1, retries.length, scenario, retrySamples);
   }
   retries = selectMarkdownComparisonRetries(measurements);
@@ -49,13 +54,25 @@ while (retries.length > 0 && retrySamples !== null) {
 
 const report = createMarkdownComparisonReport(measurements, options.samples);
 if (options.output) {
-  await writeFile(options.output, serializeMarkdownComparisonReport(report));
+  await writeMarkdownComparisonOutputAtomically(
+    options.output,
+    serializeMarkdownComparisonReport(report),
+  );
 }
 
 printTable(measurements);
 const classification = classifyMarkdownPairedMeasurements(measurements);
 printFinalClassification(classification);
 process.exitCode = markdownComparisonExitCode(classification);
+
+async function writeProgressCheckpoint() {
+  if (!options.output) return;
+  const progress = createMarkdownComparisonProgress(measurements, options.samples);
+  await writeMarkdownComparisonOutputAtomically(
+    options.output,
+    serializeMarkdownComparisonProgress(progress),
+  );
+}
 
 function runWorker(scenario, samples) {
   const worker = spawnSync(

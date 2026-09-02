@@ -2,12 +2,22 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import {
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
   assertMarkdownComparisonOutputsEquivalent,
   assertMarkdownComparisonRunOutputsEquivalent,
   classifyMarkdownPairedMeasurements,
+  createMarkdownComparisonProgress,
   createMarkdownComparisonReport,
   createMarkdownBenchmarkReport,
   formatMarkdownBenchmarkProgress,
@@ -27,7 +37,9 @@ import {
   parseMarkdownComparisonWorkerArguments,
   parseMarkdownWorkerArguments,
   selectMarkdownComparisonRetries,
+  serializeMarkdownComparisonProgress,
   serializeMarkdownComparisonReport,
+  writeMarkdownComparisonOutputAtomically,
 } from './bench-markdown-lib.mjs';
 import {
   createPreparedMaterializeRun,
@@ -640,6 +652,65 @@ test('creates and serializes a schema-v1 Markdown comparison report', () => {
   assert.equal(new Set(report.measurements.map(markdownMeasurementKey)).size, 48);
   assert.ok(serialized.endsWith('\n'));
   assert.deepEqual(JSON.parse(serialized), report);
+});
+
+test('creates discriminated newline-terminated Markdown comparison progress', () => {
+  const measurements = createValidMarkdownComparisonMeasurements().slice(0, 2);
+
+  const initial = createMarkdownComparisonProgress([], 31);
+  const progress = createMarkdownComparisonProgress(measurements, 31);
+  const serialized = serializeMarkdownComparisonProgress(progress);
+
+  assert.deepEqual(initial, {
+    kind: 'markdown-comparison-progress',
+    status: 'incomplete',
+    runtime: process.version,
+    platform: `${process.platform}-${process.arch}`,
+    initialSamples: 31,
+    completedMeasurements: [],
+  });
+  assert.deepEqual(progress, {
+    kind: 'markdown-comparison-progress',
+    status: 'incomplete',
+    runtime: process.version,
+    platform: `${process.platform}-${process.arch}`,
+    initialSamples: 31,
+    completedMeasurements: measurements,
+  });
+  assert.equal(progress.schemaVersion, undefined);
+  assert.ok(serialized.endsWith('\n'));
+  assert.deepEqual(JSON.parse(serialized), progress);
+});
+
+test('atomically replaces Markdown comparison progress with the final report', async (context) => {
+  const directory = await mkdtemp(join(tmpdir(), 'cacheplane-markdown-comparison-'));
+  const output = join(directory, 'report.json');
+  const progress = createMarkdownComparisonProgress(
+    createValidMarkdownComparisonMeasurements().slice(0, 1),
+    31,
+  );
+  const report = createMarkdownComparisonReport(
+    createValidMarkdownComparisonMeasurements(),
+    31,
+  );
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(output, '{"stale":true}\n');
+
+  await writeMarkdownComparisonOutputAtomically(
+    output,
+    serializeMarkdownComparisonProgress(progress),
+  );
+  const checkpoint = JSON.parse(await readFile(output, 'utf8'));
+  await writeMarkdownComparisonOutputAtomically(
+    output,
+    serializeMarkdownComparisonReport(report),
+  );
+  const completed = JSON.parse(await readFile(output, 'utf8'));
+  const files = await readdir(directory);
+
+  assert.deepEqual(checkpoint, progress);
+  assert.deepEqual(completed, report);
+  assert.deepEqual(files, ['report.json']);
 });
 
 test('rejects invalid Markdown comparison reports', () => {
