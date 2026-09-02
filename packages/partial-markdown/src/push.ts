@@ -4,7 +4,7 @@ import { allocId, appendNode } from './internals';
 import { handleBlockLine } from './handlers';
 
 export function pushInternal(state: InternalState, chunk: string): InternalState {
-  if (chunk.length === 0) return state;
+  if (chunk.length === 0 || state.complete || state.error) return state;
   let s = ensureRoot(state);
 
   let buffer = s.lineBuffer;

@@ -67,6 +67,7 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
   let nextPublicId = 0;
   const sidecarNodes = new Map<string, MarkdownNode>();
   const sidecarIds = new Map<string, number>();
+  const literalAutolinkScanner = createLiteralAutolinkScanner();
 
   function allocatePublicId(): number {
     while (usedPublicIds.has(nextPublicId)) nextPublicId += 1;
@@ -247,10 +248,10 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
         const children = (ast.children as number[])
           .map((childId) => sidecarNode(owner, childId))
           .filter((child): child is MarkdownNode => child !== undefined);
-        children.forEach((child, index) => {
-          child.parent = node!;
-          child.index = index;
-        });
+      children.forEach((child, index) => {
+        child.parent = node!;
+        if (child.type !== 'citation-reference') child.index = index;
+      });
         (node as { children: MarkdownNode[] }).children = children;
       }
       return node;
@@ -287,7 +288,10 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
     }
   }
 
-  function incrementalPlainTextEntry(chunk: string): PublicEntry | null {
+  function incrementalPlainTextEntry(
+    chunk: string,
+    literalAutolinkCompleted: boolean,
+  ): PublicEntry | null {
     if (
       chunk.length === 0 ||
       INLINE_REINTERPRET_RE.test(chunk) ||
@@ -347,6 +351,7 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
       return null;
     }
 
+    if (literalAutolinkCompleted) return null;
     if (wouldReinterpretTopLevelParagraph(state.lineBuffer, chunk, state)) return null;
 
     return text;
@@ -361,7 +366,9 @@ export function createPartialMarkdownParser(options?: PartialMarkdownParserOptio
 
   const parser: PartialMarkdownParser = {
     push(chunk: string): ParseEvent[] {
-      const incrementalText = incrementalPlainTextEntry(chunk);
+      if (chunk.length === 0 || state.complete || state.error) return [];
+      const literalAutolinkCompleted = literalAutolinkScanner.consume(chunk);
+      const incrementalText = incrementalPlainTextEntry(chunk, literalAutolinkCompleted);
       state = pushInternal(state, chunk);
       if (incrementalText) return updateIncrementalPlainText(incrementalText, chunk);
       return reconcile();
@@ -462,7 +469,7 @@ function wireChildren(entry: PublicEntry): void {
   if (!('children' in entry.node)) return;
   const children = entry.children.map((child, index) => {
     child.node.parent = entry.node;
-    child.node.index = index;
+    if (child.node.type !== 'citation-reference') child.node.index = index;
     return child.node;
   });
   (entry.node as { children: MarkdownNode[] }).children = children;
@@ -474,6 +481,101 @@ function matchKey(node: VisibleNode): string {
 
 function positionKey(node: VisibleNode): string {
   return `${node.parserId}:${node.parentParserId ?? 'root'}:${node.index ?? 'root'}`;
+}
+
+interface LiteralAutolinkScanner {
+  consume(chunk: string): boolean;
+}
+
+function createLiteralAutolinkScanner(): LiteralAutolinkScanner {
+  let lineHasAutolink = false;
+  let prefix = '';
+  let urlNeedsContent = false;
+  let emailPhase: 'local' | 'domain' | 'invalid' = 'local';
+  let emailLocalLength = 0;
+  let emailDomainLength = 0;
+  let emailHasFinalDot = false;
+  let emailTldLetters = 0;
+
+  const resetToken = (): void => {
+    prefix = '';
+    urlNeedsContent = false;
+    emailPhase = 'local';
+    emailLocalLength = 0;
+    emailDomainLength = 0;
+    emailHasFinalDot = false;
+    emailTldLetters = 0;
+  };
+
+  const resetLine = (): void => {
+    lineHasAutolink = false;
+    resetToken();
+  };
+
+  return {
+    consume(chunk: string): boolean {
+      let completed = false;
+
+      for (const character of chunk) {
+        if (character === '\n') {
+          resetLine();
+          continue;
+        }
+        if (/\s/.test(character)) {
+          resetToken();
+          continue;
+        }
+        if (lineHasAutolink) continue;
+        if (urlNeedsContent) {
+          lineHasAutolink = true;
+          completed = true;
+          continue;
+        }
+        if (/[([{"'`]/.test(character)) {
+          resetToken();
+          continue;
+        }
+
+        if (prefix.length < 8) prefix += character;
+        if (prefix === 'http://' || prefix === 'https://' || prefix === 'www.') {
+          urlNeedsContent = true;
+        }
+
+        if (emailPhase === 'local') {
+          if (/[A-Za-z0-9._%+-]/.test(character)) {
+            emailLocalLength += 1;
+          } else if (character === '@' && emailLocalLength > 0) {
+            emailPhase = 'domain';
+          } else {
+            emailPhase = 'invalid';
+          }
+        } else if (emailPhase === 'domain') {
+          if (!/[A-Za-z0-9.-]/.test(character)) {
+            emailPhase = 'invalid';
+            continue;
+          }
+
+          if (character === '.') {
+            emailHasFinalDot = emailDomainLength > 0;
+            emailTldLetters = 0;
+          } else if (emailHasFinalDot && /[A-Za-z]/.test(character)) {
+            emailTldLetters += 1;
+          } else if (emailHasFinalDot) {
+            emailHasFinalDot = false;
+            emailTldLetters = 0;
+          }
+          emailDomainLength += 1;
+
+          if (emailHasFinalDot && emailTldLetters >= 2) {
+            lineHasAutolink = true;
+            completed = true;
+          }
+        }
+      }
+
+      return completed;
+    },
+  };
 }
 
 function wouldReinterpretTopLevelParagraph(

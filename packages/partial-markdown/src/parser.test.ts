@@ -25,6 +25,97 @@ describe('createPartialMarkdownParser', () => {
     expect(p.root).toBeNull();
   });
 
+  it('keeps an empty finished parser empty when more content arrives', () => {
+    const p = createPartialMarkdownParser();
+    p.finish();
+
+    const events = p.push('late content\n');
+
+    expect(events).toEqual([]);
+    expect(p.root).toBeNull();
+  });
+
+  it('keeps a finished parser unchanged when more content arrives', () => {
+    const p = createPartialMarkdownParser();
+    p.push('first\n');
+    p.finish();
+    const root = p.root!;
+    const children = root.children;
+    const paragraphChildren = childNodes(children[0]!);
+    const paragraphChildrenReference = (children[0] as { children: MarkdownNode[] }).children;
+
+    const events = p.push('late content\n');
+
+    expect(events).toEqual([]);
+    expect(p.root).toBe(root);
+    expect(p.root!.children).toBe(children);
+    expect((p.root!.children[0] as { children: MarkdownNode[] }).children).toBe(paragraphChildrenReference);
+    expect(childNodes(p.root!.children[0]!)).toEqual(paragraphChildren);
+    expect(descendantsPreOrder(root).every((node) => node.status === 'complete')).toBe(true);
+  });
+
+  it.each([
+    ['https://x.test', ['https', '://x.test'], 'https://x.test'],
+    ['www.example.com', ['www', '.example.com'], 'https://www.example.com'],
+    ['docs@example.com', ['docs', '@example.com'], 'mailto:docs@example.com'],
+  ])('keeps live literal autolinks chunk invariant for %s', (input, chunks, url) => {
+    const whole = createPartialMarkdownParser();
+    whole.push(input);
+    const wholeNode = whole.getByPath('/children/0/children/0');
+    expect(wholeNode).toMatchObject({ type: 'autolink', text: input, url });
+
+    for (const partition of [chunks, [...input]]) {
+      const chunked = createPartialMarkdownParser();
+      for (const chunk of partition) chunked.push(chunk);
+
+      const chunkedNode = chunked.getByPath('/children/0/children/0');
+      expect(chunkedNode).toMatchObject({ type: 'autolink', text: input, url });
+    }
+  });
+
+  it.each([
+    ['https', '://x.test more', 'https://x.test'],
+    ['www', '.example.com more', 'https://www.example.com'],
+    ['docs', '@example.com more', 'mailto:docs@example.com'],
+  ])('reinterprets a literal autolink before trailing chunk text', (prefix, suffix, url) => {
+    const p = createPartialMarkdownParser();
+    p.push(prefix);
+
+    p.push(suffix);
+
+    const node = p.getByPath('/children/0/children/0');
+    expect(node).toMatchObject({ type: 'autolink', text: prefix + suffix.split(' ')[0], url });
+  });
+
+  it.each([
+    [['w', 'ww.example.com']],
+    [['ww', 'w.example.com']],
+  ])('recognizes www autolinks when the prefix crosses a chunk boundary', (chunks) => {
+    const p = createPartialMarkdownParser();
+    for (const chunk of chunks) p.push(chunk);
+
+    const node = p.getByPath('/children/0/children/0');
+
+    expect(node).toMatchObject({
+      type: 'autolink',
+      text: 'www.example.com',
+      url: 'https://www.example.com',
+    });
+  });
+
+  it.each([
+    [['https:', '//x.test'], 'https://x.test', 'https://x.test'],
+    [['www.', 'example.com'], 'www.example.com', 'https://www.example.com'],
+    [['docs@', 'example.com'], 'docs@example.com', 'mailto:docs@example.com'],
+  ])('recognizes incomplete first-chunk autolinks', (chunks, text, url) => {
+    const p = createPartialMarkdownParser();
+    for (const chunk of chunks) p.push(chunk);
+
+    const node = p.getByPath('/children/0/children/0');
+
+    expect(node).toMatchObject({ type: 'autolink', text, url });
+  });
+
   it('after pushing a heading, root is a MarkdownDocumentNode with one heading child', () => {
     const p = createPartialMarkdownParser();
     p.push('# hello\n');
@@ -69,6 +160,8 @@ describe('createPartialMarkdownParser', () => {
 
     streamPlainText('a.'.repeat(4_000));
     streamPlainText(`|${'a'.repeat(19_999)}`);
+    streamPlainText(`a@${'a'.repeat(8_000)}`);
+    streamPlainText(`https:${'a'.repeat(8_000)}`);
 
     const input = 'a'.repeat(8_000);
     const p = streamPlainText(input);
@@ -345,6 +438,28 @@ describe('createPartialMarkdownParser — citations sidecar', () => {
     const def = root.citations.get('src1');
     expect(def).toBeDefined();
     expect(def!.children.length).toBeGreaterThan(0);
+  });
+
+  it('preserves parser-assigned citation numbers across inline siblings', () => {
+    const p = createPartialMarkdownParser();
+
+    p.push('a [^x] b [^y]');
+
+    const paragraph = p.root!.children[0]!;
+    const citations = childNodes(paragraph).filter((node) => node.type === 'citation-reference');
+    expect(citations.map((node) => node.index)).toEqual([1, 2]);
+  });
+
+  it('preserves parser-assigned citation numbers inside definition sidecars', () => {
+    const p = createPartialMarkdownParser();
+
+    p.push('[^def]: **a [^x] b [^y]**\n');
+
+    const definition = p.root!.citations.get('def')!;
+    const citations = definition.children
+      .flatMap(descendantsPreOrder)
+      .filter((node) => node.type === 'citation-reference');
+    expect(citations.map((node) => node.index)).toEqual([2, 3]);
   });
 });
 
