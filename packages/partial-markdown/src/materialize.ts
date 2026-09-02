@@ -1,127 +1,426 @@
 // SPDX-License-Identifier: MIT
-import type { MarkdownNode } from './types';
-
+import type {
+  CitationDefinition,
+  LinkDefinition,
+  MarkdownNode,
+} from './types';
 
 interface CacheEntry {
-  version: string;
+  version: ReadonlyArray<unknown>;
+  children: ReadonlyArray<unknown> | null;
+  citations: SidecarMapState | null;
+  linkDefinitions: SidecarMapState | null;
   value: unknown;
+}
+
+interface SidecarEntry {
+  version: ReadonlyArray<unknown>;
+  children: ReadonlyArray<unknown> | null;
+  value: unknown;
+}
+
+interface SidecarMapState {
+  entries: Map<string, SidecarEntry>;
+  order: ReadonlyArray<string>;
+  value: Map<string, unknown>;
 }
 
 const cache = new WeakMap<MarkdownNode, CacheEntry>();
 
 /**
- * Produce a structurally-shared, plain-object snapshot of a markdown node tree.
- * Subtrees that haven't changed since the last call return the same reference.
- *
- * Implemented via a WeakMap keyed by node identity, with a per-node version
- * fingerprint that captures all mutable fields. Same approach used by
- * @cacheplane/partial-json's materialize().
+ * Produce a structurally shared, plain-object snapshot of a markdown node tree.
+ * Unchanged nodes, child arrays, and document sidecars retain their references.
+ * Returned snapshots are cached and should be treated as immutable.
  */
 export function materialize(node: MarkdownNode | null): unknown {
   if (node === null) return null;
-  const version = computeVersion(node);
-  const entry = cache.get(node);
-  if (entry && entry.version === version) return entry.value;
-  const value = materializeNode(node);
-  cache.set(node, { version, value });
+
+  const previous = cache.get(node);
+  const children = reconcileChildren(getChildren(node), previous?.children ?? null);
+  const citations = node.type === 'document'
+    ? reconcileSidecarMap(node.citations, previous?.citations ?? null, reconcileCitation)
+    : null;
+  const linkDefinitions = node.type === 'document'
+    ? reconcileSidecarMap(
+      node.linkDefinitions,
+      previous?.linkDefinitions ?? null,
+      reconcileLinkDefinition,
+    )
+    : null;
+
+  if (
+    previous
+    && nodeMatchesVersion(node, previous.version)
+    && children === previous.children
+    && citations === previous.citations
+    && linkDefinitions === previous.linkDefinitions
+  ) {
+    return previous.value;
+  }
+
+  const value = createNodeSnapshot(node, children, citations, linkDefinitions);
+  cache.set(node, {
+    version: captureNodeVersion(node),
+    children,
+    citations,
+    linkDefinitions,
+    value,
+  });
+
   return value;
 }
 
-function computeVersion(node: MarkdownNode): string {
+function getChildren(node: MarkdownNode): ReadonlyArray<MarkdownNode> | null {
+  return 'children' in node ? node.children : null;
+}
+
+function reconcileChildren(
+  nodes: ReadonlyArray<MarkdownNode> | null,
+  previous: ReadonlyArray<unknown> | null,
+): ReadonlyArray<unknown> | null {
+  if (nodes === null) return null;
+  if (previous === null || previous.length !== nodes.length) {
+    return nodes.map((child) => materialize(child));
+  }
+
+  let next = previous;
+  for (let index = 0; index < nodes.length; index++) {
+    const child = materialize(nodes[index]);
+    if (child !== previous[index]) {
+      if (next === previous) next = [...previous];
+      (next as unknown[])[index] = child;
+    }
+  }
+
+  return next;
+}
+
+function reconcileSidecarMap<T>(
+  definitions: ReadonlyMap<string, T>,
+  previous: SidecarMapState | null,
+  reconcileEntry: (definition: T, previous: SidecarEntry | null) => SidecarEntry,
+): SidecarMapState {
+  if (previous === null) {
+    const entries = new Map<string, SidecarEntry>();
+    for (const [key, definition] of definitions) {
+      entries.set(key, reconcileEntry(definition, null));
+    }
+    return createSidecarMapState(entries);
+  }
+
+  let entries = previous.entries;
+  let changed = definitions.size !== previous.entries.size;
+  let orderChanged = definitions.size !== previous.order.length;
+  let index = 0;
+
+  for (const [key, definition] of definitions) {
+    if (previous.order[index] !== key) orderChanged = true;
+
+    const previousEntry = previous.entries.get(key) ?? null;
+    const nextEntry = reconcileEntry(definition, previousEntry);
+    if (nextEntry !== previousEntry) {
+      if (entries === previous.entries) entries = new Map(previous.entries);
+      entries.set(key, nextEntry);
+      changed = true;
+    }
+    index++;
+  }
+
+  if (definitions.size !== previous.entries.size) {
+    if (entries === previous.entries) entries = new Map(previous.entries);
+    for (const key of entries.keys()) {
+      if (!definitions.has(key)) entries.delete(key);
+    }
+  }
+
+  if (!changed && !orderChanged) return previous;
+
+  if (orderChanged || entries.size !== definitions.size) {
+    const orderedEntries = new Map<string, SidecarEntry>();
+    for (const key of definitions.keys()) {
+      const entry = entries.get(key);
+      if (entry) orderedEntries.set(key, entry);
+    }
+    entries = orderedEntries;
+  }
+
+  return createSidecarMapState(entries);
+}
+
+function createSidecarMapState(entries: Map<string, SidecarEntry>): SidecarMapState {
+  const value = new Map<string, unknown>();
+  for (const [key, entry] of entries) value.set(key, entry.value);
+
+  return {
+    entries,
+    order: [...entries.keys()],
+    value,
+  };
+}
+
+function reconcileCitation(
+  definition: CitationDefinition,
+  previous: SidecarEntry | null,
+): SidecarEntry {
+  const children = reconcileChildren(definition.children, previous?.children ?? null);
+  if (
+    previous
+    && definition.id === previous.version[0]
+    && definition.index === previous.version[1]
+    && definition.status === previous.version[2]
+    && children === previous.children
+  ) {
+    return previous;
+  }
+
+  return {
+    version: [definition.id, definition.index, definition.status],
+    children,
+    value: {
+      id: definition.id,
+      index: definition.index,
+      status: definition.status,
+      children,
+    },
+  };
+}
+
+function reconcileLinkDefinition(
+  definition: LinkDefinition,
+  previous: SidecarEntry | null,
+): SidecarEntry {
+  if (
+    previous
+    && definition.id === previous.version[0]
+    && definition.label === previous.version[1]
+    && definition.url === previous.version[2]
+    && definition.title === previous.version[3]
+    && definition.status === previous.version[4]
+  ) {
+    return previous;
+  }
+
+  return {
+    version: [
+      definition.id,
+      definition.label,
+      definition.url,
+      definition.title,
+      definition.status,
+    ],
+    children: null,
+    value: {
+      id: definition.id,
+      label: definition.label,
+      url: definition.url,
+      title: definition.title,
+      status: definition.status,
+    },
+  };
+}
+
+function createNodeSnapshot(
+  node: MarkdownNode,
+  children: ReadonlyArray<unknown> | null,
+  citations: SidecarMapState | null,
+  linkDefinitions: SidecarMapState | null,
+): unknown {
+  const source = node as unknown as Record<string, unknown>;
+  const value: Record<string, unknown> = {};
+
+  for (const [key, field] of Object.entries(source)) {
+    switch (key) {
+      case 'parent':
+        value.parent = null;
+        break;
+      case 'children':
+        value.children = children;
+        break;
+      case 'citations':
+        value.citations = citations?.value;
+        break;
+      case 'linkDefinitions':
+        value.linkDefinitions = linkDefinitions?.value;
+        break;
+      default:
+        value[key] = cloneScalarField(field);
+    }
+  }
+
+  return value;
+}
+
+function cloneScalarField(value: unknown): unknown {
+  if (Array.isArray(value)) return [...value];
+  if (value !== null && typeof value === 'object') {
+    return { ...(value as Record<string, unknown>) };
+  }
+  return value;
+}
+
+function nodeMatchesVersion(node: MarkdownNode, version: ReadonlyArray<unknown>): boolean {
+  if (
+    node.id !== version[0]
+    || node.type !== version[1]
+    || node.status !== version[2]
+    || node.index !== version[3]
+  ) {
+    return false;
+  }
+
   switch (node.type) {
-    case 'text':
-    case 'inline-code':
-    case 'math-inline':
-      return `${node.type}:${node.status}:${(node as any).text}`;
-    case 'math-display':
-      return `math-display:${node.status}:${(node as any).delimiter}:${(node as any).text}`;
-    case 'html-inline':
-      return `html-inline:${node.status}:${(node as any).raw}`;
-    case 'html-block':
-      return `html-block:${node.status}:${(node as any).htmlKind}:${(node as any).raw}`;
-    case 'code-block':
-      return `code-block:${node.status}:${(node as any).language}:${(node as any).text}`;
-    case 'autolink':
-      return `autolink:${node.status}:${(node as any).url}`;
-    case 'image':
-      return `image:${(node as any).url}:${(node as any).alt}:${(node as any).title}`;
+    case 'document':
+    case 'paragraph':
+    case 'blockquote':
+    case 'emphasis':
+    case 'strong':
+    case 'strikethrough':
     case 'thematic-break':
     case 'soft-break':
     case 'hard-break':
-      return `${node.type}:${node.status}`;
+      return version.length === 4;
+    case 'heading':
+      return node.level === version[4];
+    case 'list':
+      return node.ordered === version[4]
+        && node.start === version[5]
+        && node.tight === version[6]
+        && node.markerCol === version[7]
+        && node.contentCol === version[8];
+    case 'list-item':
+      return (node.task?.checked ?? null) === version[4];
+    case 'code-block':
+      return node.variant === version[4]
+        && node.language === version[5]
+        && node.text === version[6];
+    case 'text':
+    case 'inline-code':
+      return node.text === version[4];
+    case 'math-inline':
+    case 'math-display':
+      return node.text === version[4] && node.delimiter === version[5];
+    case 'html-inline':
+      return node.raw === version[4];
+    case 'html-block':
+      return node.raw === version[4] && node.htmlKind === version[5];
+    case 'link':
+      return node.url === version[4] && node.title === version[5];
+    case 'autolink':
+      return node.url === version[4] && node.text === version[5];
+    case 'image':
+      return node.url === version[4]
+        && node.title === version[5]
+        && node.alt === version[6];
+    case 'table':
+      return arrayMatchesVersion(node.alignments, version, 4);
+    case 'table-row':
+      return node.isHeader === version[4];
+    case 'table-cell':
+      return node.alignment === version[4];
     case 'citation-reference':
-      return `citation-reference:${node.status}:${(node as any).refId}:${(node as any).resolved}:${(node as any).index}`;
-    case 'link-reference': {
-      const parts = [
-        `link-reference:${node.status}:${(node as any).refId}:${(node as any).resolved}:${(node as any).url}:${(node as any).title}`,
-      ];
-      const children = (node as any).children as MarkdownNode[] | undefined;
-      if (children) {
-        for (const child of children) parts.push(computeVersion(child));
-      }
-      return parts.join('|');
-    }
-    default: {
-      const parts = [`${node.type}:${node.status}`];
-      const children = (node as any).children as MarkdownNode[] | undefined;
-      if (children) {
-        for (const child of children) parts.push(computeVersion(child));
-      }
-      if (node.type === 'heading') parts.push(`L${(node as any).level}`);
-      if (node.type === 'list') parts.push(`O${(node as any).ordered}:S${(node as any).start}:T${(node as any).tight}`);
-      if (node.type === 'list-item' && (node as any).task !== undefined) {
-        parts.push(`TASK:${(node as any).task.checked}`);
-      }
-      if (node.type === 'link') parts.push(`U${(node as any).url}:T${(node as any).title}`);
-      if (node.type === 'table') parts.push(`A${JSON.stringify((node as any).alignments)}`);
-      if (node.type === 'table-row') parts.push(`H${(node as any).isHeader}`);
-      if (node.type === 'table-cell') parts.push(`A${(node as any).alignment}`);
-      if (node.type === 'document') {
-        const citations = (node as any).citations as Map<string, any> | undefined;
-        if (citations) {
-          for (const [id, def] of citations) {
-            parts.push(`CITE:${id}:${def.index}:${def.status}`);
-            for (const child of def.children) parts.push(computeVersion(child));
-          }
-        }
-        const linkDefinitions = (node as any).linkDefinitions as Map<string, any> | undefined;
-        if (linkDefinitions) {
-          for (const [id, def] of linkDefinitions) {
-            parts.push(`LINKDEF:${id}:${def.url}:${def.title}:${def.status}`);
-          }
-        }
-      }
-      return parts.join('|');
-    }
+      return node.refId === version[4] && node.resolved === version[5];
+    case 'link-reference':
+      return node.refId === version[4]
+        && node.label === version[5]
+        && node.form === version[6]
+        && node.resolved === version[7]
+        && node.url === version[8]
+        && node.title === version[9];
+    default:
+      return assertNever(node);
   }
 }
 
-function materializeNode(node: MarkdownNode): unknown {
-  const out: any = { ...node, parent: null };
-  const children = (node as any).children as MarkdownNode[] | undefined;
-  if (children) {
-    out.children = children.map(child => materialize(child));
+function captureNodeVersion(node: MarkdownNode): ReadonlyArray<unknown> {
+  const version: unknown[] = [node.id, node.type, node.status, node.index];
+
+  switch (node.type) {
+    case 'document':
+    case 'paragraph':
+    case 'blockquote':
+    case 'emphasis':
+    case 'strong':
+    case 'strikethrough':
+    case 'thematic-break':
+    case 'soft-break':
+    case 'hard-break':
+      break;
+    case 'heading':
+      version.push(node.level);
+      break;
+    case 'list':
+      version.push(node.ordered, node.start, node.tight, node.markerCol, node.contentCol);
+      break;
+    case 'list-item':
+      version.push(node.task?.checked ?? null);
+      break;
+    case 'code-block':
+      version.push(node.variant, node.language, node.text);
+      break;
+    case 'text':
+    case 'inline-code':
+      version.push(node.text);
+      break;
+    case 'math-inline':
+    case 'math-display':
+      version.push(node.text, node.delimiter);
+      break;
+    case 'html-inline':
+      version.push(node.raw);
+      break;
+    case 'html-block':
+      version.push(node.raw, node.htmlKind);
+      break;
+    case 'link':
+      version.push(node.url, node.title);
+      break;
+    case 'autolink':
+      version.push(node.url, node.text);
+      break;
+    case 'image':
+      version.push(node.url, node.title, node.alt);
+      break;
+    case 'table':
+      version.push(...node.alignments);
+      break;
+    case 'table-row':
+      version.push(node.isHeader);
+      break;
+    case 'table-cell':
+      version.push(node.alignment);
+      break;
+    case 'citation-reference':
+      version.push(node.refId, node.resolved);
+      break;
+    case 'link-reference':
+      version.push(
+        node.refId,
+        node.label,
+        node.form,
+        node.resolved,
+        node.url,
+        node.title,
+      );
+      break;
+    default:
+      assertNever(node);
   }
-  if (node.type === 'document') {
-    const citations = (node as any).citations as Map<string, any> | undefined;
-    if (citations) {
-      const newMap = new Map<string, any>();
-      for (const [id, def] of citations) {
-        newMap.set(id, {
-          ...def,
-          children: def.children.map((c: MarkdownNode) => materialize(c)),
-        });
-      }
-      out.citations = newMap;
-    }
-    const linkDefinitions = (node as any).linkDefinitions as Map<string, any> | undefined;
-    if (linkDefinitions) {
-      const newMap = new Map<string, any>();
-      for (const [id, def] of linkDefinitions) {
-        newMap.set(id, { ...def });
-      }
-      out.linkDefinitions = newMap;
-    }
+
+  return version;
+}
+
+function arrayMatchesVersion(
+  values: ReadonlyArray<unknown>,
+  version: ReadonlyArray<unknown>,
+  offset: number,
+): boolean {
+  if (values.length !== version.length - offset) return false;
+  for (let index = 0; index < values.length; index++) {
+    if (values[index] !== version[offset + index]) return false;
   }
-  return out;
+  return true;
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unsupported markdown node type: ${String(value)}`);
 }
