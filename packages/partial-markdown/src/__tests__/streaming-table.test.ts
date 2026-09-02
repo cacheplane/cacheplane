@@ -5,6 +5,7 @@
 // blank/flash. The committed parse is unchanged.
 import { describe, it, expect } from 'vitest';
 import { createPartialMarkdownParser, materialize } from '../index';
+import type { MarkdownTableNode, MarkdownTextNode } from '../types';
 
 function blocks(p: ReturnType<typeof createPartialMarkdownParser>) {
   const doc = materialize(p.root) as { children?: Array<{ type: string; status: string }> } | null;
@@ -167,6 +168,27 @@ describe('streaming table body rows — open-line projection', () => {
     p.push(' | y1');
     doc = materialize(p.root) as any;
     expect(JSON.stringify(doc.children[0].children[1])).toContain('y1');
+  });
+
+  it('updates plain cell text without rewiring unchanged table containers', () => {
+    const p = createPartialMarkdownParser();
+    p.push(HEADER);
+    p.push('| alpha');
+    const table = p.root!.children[0] as MarkdownTableNode;
+    const row = table.children[1];
+    const cell = row.children[0];
+    const text = cell.children[0] as MarkdownTextNode;
+    const tableChildren = table.children;
+    const rowChildren = row.children;
+    const cellChildren = cell.children;
+
+    const events = p.push('1');
+
+    expect(table.children).toBe(tableChildren);
+    expect(row.children).toBe(rowChildren);
+    expect(cell.children).toBe(cellChildren);
+    expect(text.text).toBe('alpha1');
+    expect(events).toEqual([{ type: 'value-updated', node: text, delta: '1' }]);
   });
 
   it('projects an indented partial row (matches TABLE_ROW_RE indent handling)', () => {
