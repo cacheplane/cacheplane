@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: MIT
 import {
+  median,
+  relativeMedianAbsoluteDeviation,
+} from './bench-lib.mjs';
+import {
   markdownChunkers,
   markdownWorkloads,
 } from './fixtures/markdown-workloads.mjs';
@@ -10,9 +14,9 @@ const sourceImplementations = Object.freeze([
   'materialize-each',
 ]);
 
-const sourceScenarios = sourceImplementations.flatMap((implementation) => (
-  markdownWorkloads.flatMap((workload) => (
-    markdownChunkers.map((chunker) => freezeScenario(
+const sourceScenarios = markdownWorkloads.flatMap((workload) => (
+  markdownChunkers.flatMap((chunker) => (
+    sourceImplementations.map((implementation) => freezeScenario(
       implementation,
       workload.name,
       chunker.name,
@@ -31,12 +35,17 @@ export const markdownScenarios = Object.freeze([
   ...preparedScenarios,
 ]);
 
+/** Maximum duration allowed for one isolated Markdown benchmark worker. */
+export const markdownBenchmarkWorkerTimeoutMs = 300_000;
+
 const markdownScenarioKeys = new Set(markdownScenarios.map(markdownMeasurementKey));
-const measurementNumericFields = Object.freeze([
+const measurementNonnegativeFields = Object.freeze([
   'medianMs',
   'relativeMad',
   'retainedHeapBytes',
   'retainedHeapRelativeMad',
+]);
+const measurementPositiveIntegerFields = Object.freeze([
   'bytes',
   'chunks',
   'repetitions',
@@ -50,6 +59,85 @@ const measurementNumericFields = Object.freeze([
  */
 export function markdownMeasurementKey(entry) {
   return `${entry.implementation}/${entry.workload}/${entry.chunking}`;
+}
+
+/**
+ * Formats one completed Markdown benchmark scenario for stderr progress.
+ *
+ * @param {number} index One-based completed scenario index.
+ * @param {number} total Total scenario count.
+ * @param {{ implementation: string, workload: string, chunking: string }} scenario Completed scenario.
+ * @returns {string} Human-readable progress line.
+ */
+export function formatMarkdownBenchmarkProgress(index, total, scenario) {
+  return `[${index}/${total}] ${markdownMeasurementKey(scenario)}`;
+}
+
+/**
+ * Converts an unsuccessful worker result into a scenario-specific error.
+ *
+ * @param {{ error?: Error & { code?: string }, status: number | null, signal?: string | null, stderr?: string }} worker Worker process result.
+ * @param {{ implementation: string, workload: string, chunking: string }} scenario Worker scenario.
+ * @returns {Error | null} Worker failure, or null for a successful exit.
+ */
+export function markdownBenchmarkWorkerError(worker, scenario) {
+  const key = markdownMeasurementKey(scenario);
+  if (worker.error?.code === 'ETIMEDOUT') {
+    return new Error(
+      `Markdown benchmark worker ${key} timed out after ${markdownBenchmarkWorkerTimeoutMs}ms`,
+    );
+  }
+  if (worker.error) {
+    return new Error(`Markdown benchmark worker ${key} failed to start: ${worker.error.message}`);
+  }
+  if (worker.status !== 0) {
+    const detail = worker.stderr?.trim() || (
+      worker.signal ? `terminated by signal ${worker.signal}` : `exited with status ${worker.status}`
+    );
+    return new Error(`Markdown benchmark worker ${key} failed: ${detail}`);
+  }
+  return null;
+}
+
+/**
+ * Computes retained-heap dispersion without hiding sparse positive samples.
+ *
+ * @param {number[]} samples Retained-heap byte samples.
+ * @returns {number} Relative retained-heap instability.
+ */
+export function markdownRetainedHeapRelativeMad(samples) {
+  if (median(samples) === 0 && samples.some((sample) => sample > 0)) return 1;
+  return relativeMedianAbsoluteDeviation(samples);
+}
+
+/**
+ * Measures one retained-heap sample with the scenario's consumer retention model.
+ *
+ * @param {() => unknown} run Benchmark invocation.
+ * @param {{
+ *   retainPrevious: boolean,
+ *   collectGarbage: () => void,
+ *   heapUsed: () => number,
+ *   retain: (value: unknown) => void,
+ * }} environment Heap measurement operations.
+ * @returns {number} Nonnegative retained-heap bytes.
+ */
+export function measureMarkdownRetainedHeapSample(run, environment) {
+  let retainedSnapshots;
+  if (environment.retainPrevious) {
+    retainedSnapshots = { previous: run(), current: undefined };
+    environment.retain(retainedSnapshots);
+  }
+
+  environment.collectGarbage();
+  const before = environment.heapUsed();
+  if (retainedSnapshots) {
+    retainedSnapshots.current = run();
+  } else {
+    environment.retain(run());
+  }
+  environment.collectGarbage();
+  return Math.max(0, environment.heapUsed() - before);
 }
 
 /**
@@ -118,6 +206,10 @@ export function parseMarkdownWorkerArguments(args) {
  * @returns {{ schemaVersion: 1, runtime: string, platform: string, samples: number, measurements: object[] }} Markdown benchmark report.
  */
 export function createMarkdownBenchmarkReport(measurements, samples) {
+  if (!Number.isInteger(samples) || samples < 3) {
+    throw new Error('Markdown benchmark report samples must be an integer >= 3');
+  }
+
   const keys = measurements.map(markdownMeasurementKey);
   if (new Set(keys).size !== keys.length) {
     throw new Error('Markdown benchmark report contains duplicate measurement keys');
@@ -130,8 +222,15 @@ export function createMarkdownBenchmarkReport(measurements, samples) {
   }
 
   for (const measurement of measurements) {
-    for (const field of measurementNumericFields) {
+    for (const field of measurementNonnegativeFields) {
       if (!Number.isFinite(measurement[field]) || measurement[field] < 0) {
+        throw new Error(
+          `Markdown benchmark measurement ${markdownMeasurementKey(measurement)} has invalid ${field}`,
+        );
+      }
+    }
+    for (const field of measurementPositiveIntegerFields) {
+      if (!Number.isInteger(measurement[field]) || measurement[field] <= 0) {
         throw new Error(
           `Markdown benchmark measurement ${markdownMeasurementKey(measurement)} has invalid ${field}`,
         );

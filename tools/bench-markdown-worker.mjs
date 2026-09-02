@@ -5,7 +5,11 @@ import {
   relativeMedianAbsoluteDeviation,
   repetitionsForTargetDuration,
 } from './bench-lib.mjs';
-import { parseMarkdownWorkerArguments } from './bench-markdown-lib.mjs';
+import {
+  markdownRetainedHeapRelativeMad,
+  measureMarkdownRetainedHeapSample,
+  parseMarkdownWorkerArguments,
+} from './bench-markdown-lib.mjs';
 import {
   createPreparedMaterializeRun,
   createSourceRun,
@@ -60,11 +64,14 @@ for (let iteration = 0; iteration < samples; iteration += 1) {
 
 const retainedHeapSamples = [];
 for (let iteration = 0; iteration < 7; iteration += 1) {
-  global.gc();
-  const before = process.memoryUsage().heapUsed;
-  globalThis.__cacheplaneMarkdownBenchmarkRetained = run();
-  global.gc();
-  retainedHeapSamples.push(Math.max(0, process.memoryUsage().heapUsed - before));
+  retainedHeapSamples.push(measureMarkdownRetainedHeapSample(run, {
+    retainPrevious: prepared,
+    collectGarbage: () => global.gc(),
+    heapUsed: () => process.memoryUsage().heapUsed,
+    retain: (value) => {
+      globalThis.__cacheplaneMarkdownBenchmarkRetained = value;
+    },
+  }));
   globalThis.__cacheplaneMarkdownBenchmarkRetained = undefined;
 }
 
@@ -78,5 +85,5 @@ process.stdout.write(JSON.stringify({
   medianMs: median(durations),
   relativeMad: relativeMedianAbsoluteDeviation(durations),
   retainedHeapBytes: median(retainedHeapSamples),
-  retainedHeapRelativeMad: relativeMedianAbsoluteDeviation(retainedHeapSamples),
+  retainedHeapRelativeMad: markdownRetainedHeapRelativeMad(retainedHeapSamples),
 }));

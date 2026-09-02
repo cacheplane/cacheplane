@@ -4,6 +4,9 @@ import { writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
   createMarkdownBenchmarkReport,
+  formatMarkdownBenchmarkProgress,
+  markdownBenchmarkWorkerError,
+  markdownBenchmarkWorkerTimeoutMs,
   markdownMeasurementKey,
   markdownScenarios,
   parseMarkdownBenchmarkOptions,
@@ -11,7 +14,11 @@ import {
 
 const options = parseMarkdownBenchmarkOptions(process.argv.slice(2));
 const workerPath = fileURLToPath(new URL('./bench-markdown-worker.mjs', import.meta.url));
-const measurements = markdownScenarios.map((scenario) => runWorker(scenario));
+const measurements = [];
+for (const [index, scenario] of markdownScenarios.entries()) {
+  measurements.push(runWorker(scenario));
+  console.error(formatMarkdownBenchmarkProgress(index + 1, markdownScenarios.length, scenario));
+}
 const report = createMarkdownBenchmarkReport(measurements, options.samples);
 
 if (options.output) {
@@ -21,7 +28,6 @@ if (options.output) {
 printTable(measurements);
 
 function runWorker(scenario) {
-  const key = markdownMeasurementKey(scenario);
   const worker = spawnSync(
     process.execPath,
     [
@@ -32,20 +38,16 @@ function runWorker(scenario) {
       scenario.chunking,
       String(options.samples),
     ],
-    { encoding: 'utf8' },
+    { encoding: 'utf8', timeout: markdownBenchmarkWorkerTimeoutMs },
   );
 
-  if (worker.error) {
-    throw new Error(`Markdown benchmark worker ${key} failed to start: ${worker.error.message}`);
-  }
-  if (worker.status !== 0) {
-    const detail = worker.stderr.trim() || `exited with status ${worker.status}`;
-    throw new Error(`Markdown benchmark worker ${key} failed: ${detail}`);
-  }
+  const workerError = markdownBenchmarkWorkerError(worker, scenario);
+  if (workerError) throw workerError;
 
   try {
     return JSON.parse(worker.stdout);
   } catch (error) {
+    const key = markdownMeasurementKey(scenario);
     throw new Error(`Markdown benchmark worker ${key} returned invalid JSON: ${error.message}`);
   }
 }

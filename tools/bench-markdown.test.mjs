@@ -1,10 +1,17 @@
 // SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
   createMarkdownBenchmarkReport,
+  formatMarkdownBenchmarkProgress,
+  markdownBenchmarkWorkerError,
+  markdownBenchmarkWorkerTimeoutMs,
   markdownMeasurementKey,
+  markdownRetainedHeapRelativeMad,
   markdownScenarios,
+  measureMarkdownRetainedHeapSample,
   parseMarkdownBenchmarkOptions,
   parseMarkdownWorkerArguments,
 } from './bench-markdown-lib.mjs';
@@ -165,6 +172,23 @@ test('defines exactly 48 unique Markdown benchmark scenarios', () => {
   assert.deepEqual([...keys].sort(), [...expectedKeys].sort());
 });
 
+test('orders source scenarios by workload, chunker, then implementation', () => {
+  const sourceImplementations = ['events', 'final-materialize', 'materialize-each'];
+  const workloadNames = ['mixed', 'long-prose', 'deep-blockquote', 'wide-table', 'references'];
+  const chunkerNames = ['whole', '64-byte', 'character'];
+  const expectedKeys = workloadNames.flatMap((workload) => (
+    chunkerNames.flatMap((chunking) => (
+      sourceImplementations.map((implementation) => (
+        `${implementation}/${workload}/${chunking}`
+      ))
+    ))
+  ));
+
+  const keys = markdownScenarios.slice(0, 45).map(markdownMeasurementKey);
+
+  assert.deepEqual(keys, expectedKeys);
+});
+
 test('parses Markdown benchmark options with stable defaults', () => {
   const defaults = parseMarkdownBenchmarkOptions([]);
   const configured = parseMarkdownBenchmarkOptions([
@@ -234,6 +258,68 @@ test('rejects invalid Markdown worker arguments', () => {
   }
 });
 
+test('formats Markdown benchmark progress with the completed index and scenario key', () => {
+  const progress = formatMarkdownBenchmarkProgress(1, 48, markdownScenarios[0]);
+
+  assert.equal(progress, '[1/48] events/mixed/whole');
+});
+
+test('reports the five-minute Markdown worker timeout clearly', () => {
+  const timeoutError = Object.assign(new Error('spawnSync node ETIMEDOUT'), {
+    code: 'ETIMEDOUT',
+  });
+
+  const error = markdownBenchmarkWorkerError(
+    { error: timeoutError, status: null, stderr: '' },
+    markdownScenarios[0],
+  );
+
+  assert.equal(markdownBenchmarkWorkerTimeoutMs, 300_000);
+  assert.match(
+    error.message,
+    /events\/mixed\/whole timed out after 300000ms/i,
+  );
+});
+
+test('Markdown benchmark worker emits one valid measurement as JSON', () => {
+  const workerPath = fileURLToPath(new URL('./bench-markdown-worker.mjs', import.meta.url));
+
+  const worker = spawnSync(
+    process.execPath,
+    ['--expose-gc', workerPath, 'events', 'deep-blockquote', 'whole', '3'],
+    { encoding: 'utf8', timeout: markdownBenchmarkWorkerTimeoutMs },
+  );
+
+  assert.equal(worker.status, 0, worker.stderr);
+  assert.equal(worker.stderr, '');
+  const measurement = JSON.parse(worker.stdout);
+  assert.deepEqual(
+    {
+      implementation: measurement.implementation,
+      workload: measurement.workload,
+      chunking: measurement.chunking,
+    },
+    {
+      implementation: 'events',
+      workload: 'deep-blockquote',
+      chunking: 'whole',
+    },
+  );
+  for (const field of ['bytes', 'chunks', 'repetitions']) {
+    assert.ok(Number.isInteger(measurement[field]), field);
+    assert.ok(measurement[field] > 0, field);
+  }
+  for (const field of [
+    'medianMs',
+    'relativeMad',
+    'retainedHeapBytes',
+    'retainedHeapRelativeMad',
+  ]) {
+    assert.ok(Number.isFinite(measurement[field]), field);
+    assert.ok(measurement[field] >= 0, field);
+  }
+});
+
 test('creates a schema-v1 Markdown benchmark report for the exact scenario matrix', () => {
   const measurements = createValidMarkdownMeasurements();
 
@@ -274,15 +360,21 @@ test('rejects missing, duplicate, and unexpected Markdown measurements', () => {
   );
 });
 
-test('rejects invalid Markdown measurement numeric fields', () => {
+test('rejects invalid Markdown report sample counts', () => {
+  for (const samples of [Number.NaN, 0, 2, 3.5]) {
+    assert.throws(
+      () => createMarkdownBenchmarkReport(createValidMarkdownMeasurements(), samples),
+      /samples.*integer >= 3/i,
+    );
+  }
+});
+
+test('rejects invalid Markdown timing and heap measurement fields', () => {
   const fields = [
     'medianMs',
     'relativeMad',
     'retainedHeapBytes',
     'retainedHeapRelativeMad',
-    'bytes',
-    'chunks',
-    'repetitions',
   ];
 
   for (const field of fields) {
@@ -296,6 +388,109 @@ test('rejects invalid Markdown measurement numeric fields', () => {
       );
     }
   }
+});
+
+test('rejects non-positive or fractional Markdown measurement counts', () => {
+  const fields = ['bytes', 'chunks', 'repetitions'];
+
+  for (const field of fields) {
+    for (const value of [Number.POSITIVE_INFINITY, Number.NaN, -1, 0, 1.5]) {
+      const measurements = createValidMarkdownMeasurements();
+      measurements[0] = { ...measurements[0], [field]: value };
+
+      assert.throws(
+        () => createMarkdownBenchmarkReport(measurements, 3),
+        new RegExp(`invalid ${field}`, 'i'),
+      );
+    }
+  }
+});
+
+test('reports retained-heap instability when a zero median hides positive samples', () => {
+  const sparsePositive = [0, 0, 0, 0, 32_768, 65_536, 131_072];
+  const stableNonzero = [90, 95, 100, 100, 100, 105, 110];
+
+  assert.equal(markdownRetainedHeapRelativeMad(sparsePositive), 1);
+  assert.equal(markdownRetainedHeapRelativeMad([0, 0, 0, 0, 0, 0, 0]), 0);
+  assert.equal(markdownRetainedHeapRelativeMad(stableNonzero), 0.05);
+});
+
+test('prepared retained-heap samples keep previous and current snapshots through the final GC', () => {
+  const snapshots = [{ id: 'previous' }, { id: 'current' }];
+  const heapSizes = [1_000, 1_128];
+  const events = [];
+  let retained;
+
+  const retainedBytes = measureMarkdownRetainedHeapSample(
+    () => {
+      const snapshot = snapshots.shift();
+      events.push(`run:${snapshot.id}`);
+      return snapshot;
+    },
+    {
+      retainPrevious: true,
+      collectGarbage() {
+        events.push(`gc:${retained.previous.id}/${retained.current?.id ?? 'none'}`);
+      },
+      heapUsed() {
+        events.push('heap');
+        return heapSizes.shift();
+      },
+      retain(value) {
+        retained = value;
+        events.push(`retain:${value.previous.id}/${value.current?.id ?? 'none'}`);
+      },
+    },
+  );
+
+  assert.equal(retainedBytes, 128);
+  assert.deepEqual(retained, {
+    previous: { id: 'previous' },
+    current: { id: 'current' },
+  });
+  assert.deepEqual(events, [
+    'run:previous',
+    'retain:previous/none',
+    'gc:previous/none',
+    'heap',
+    'run:current',
+    'gc:previous/current',
+    'heap',
+  ]);
+});
+
+test('source retained-heap samples retain only the new result', () => {
+  const result = { id: 'source' };
+  const events = [];
+  let retained;
+
+  const retainedBytes = measureMarkdownRetainedHeapSample(
+    () => {
+      events.push('run');
+      return result;
+    },
+    {
+      retainPrevious: false,
+      collectGarbage() {
+        events.push('gc');
+      },
+      heapUsed: (() => {
+        const heapSizes = [2_000, 2_064];
+        return () => {
+          events.push('heap');
+          return heapSizes.shift();
+        };
+      })(),
+      retain(value) {
+        retained = value;
+        events.push('retain');
+      },
+    },
+  );
+
+  assert.equal(retainedBytes, 64);
+  assert.equal(retained, result);
+  assert.deepEqual(events, ['gc', 'heap', 'run', 'retain', 'gc', 'heap']);
 });
 
 test('all Markdown chunkings materialize like a whole push of the same effective input', () => {
