@@ -455,28 +455,16 @@ test('Markdown benchmark worker emits one valid measurement as JSON', () => {
 });
 
 test('Markdown comparison worker emits one valid paired measurement as JSON', () => {
-  const workerPath = fileURLToPath(
-    new URL('./bench-markdown-compare-worker.mjs', import.meta.url),
-  );
-  const worktreeRoot = fileURLToPath(new URL('..', import.meta.url));
+  const scenario = {
+    implementation: 'events',
+    workload: 'deep-blockquote',
+    chunking: 'whole',
+  };
 
-  const worker = spawnSync(
-    process.execPath,
-    [
-      workerPath,
-      worktreeRoot,
-      worktreeRoot,
-      'events',
-      'deep-blockquote',
-      'whole',
-      '30',
-    ],
-    { encoding: 'utf8', timeout: markdownComparisonWorkerTimeoutMs },
-  );
+  const { worker, measurement } = runMarkdownComparisonWorker(scenario);
 
   assert.equal(worker.status, 0, worker.stderr);
   assert.equal(worker.stderr, '');
-  const measurement = JSON.parse(worker.stdout);
   assert.deepEqual(
     {
       implementation: measurement.implementation,
@@ -506,6 +494,30 @@ test('Markdown comparison worker emits one valid paired measurement as JSON', ()
     assert.ok(Number.isFinite(measurement[field]), field);
     assert.ok(measurement[field] >= 0, field);
   }
+});
+
+test('Markdown comparison worker phase-hardens prepared leaf-change measurements', () => {
+  const scenario = {
+    implementation: 'leaf-change',
+    workload: 'long-prose',
+    chunking: 'prepared',
+  };
+
+  const result = runMarkdownComparisonWorker(scenario);
+
+  assertPreparedMutationWorkerResult(result, scenario);
+});
+
+test('Markdown comparison worker phase-hardens prepared citation-change measurements', () => {
+  const scenario = {
+    implementation: 'citation-change',
+    workload: 'references',
+    chunking: 'prepared',
+  };
+
+  const result = runMarkdownComparisonWorker(scenario);
+
+  assertPreparedMutationWorkerResult(result, scenario);
 });
 
 test('creates a schema-v1 Markdown benchmark report for the exact scenario matrix', () => {
@@ -1212,6 +1224,46 @@ function captureError(run) {
     return error;
   }
   return undefined;
+}
+
+function runMarkdownComparisonWorker(scenario) {
+  const workerPath = fileURLToPath(
+    new URL('./bench-markdown-compare-worker.mjs', import.meta.url),
+  );
+  const worktreeRoot = fileURLToPath(new URL('..', import.meta.url));
+  const worker = spawnSync(
+    process.execPath,
+    [
+      workerPath,
+      worktreeRoot,
+      worktreeRoot,
+      scenario.implementation,
+      scenario.workload,
+      scenario.chunking,
+      '30',
+    ],
+    { encoding: 'utf8', timeout: markdownComparisonWorkerTimeoutMs },
+  );
+  const measurement = worker.status === 0 ? JSON.parse(worker.stdout) : undefined;
+
+  return { worker, measurement };
+}
+
+function assertPreparedMutationWorkerResult({ worker, measurement }, scenario) {
+  assert.equal(worker.status, 0, worker.stderr);
+  assert.equal(worker.stderr, '');
+  assert.deepEqual(
+    {
+      implementation: measurement.implementation,
+      workload: measurement.workload,
+      chunking: measurement.chunking,
+      samples: measurement.samples,
+    },
+    { ...scenario, samples: 30 },
+  );
+  assert.ok(Number.isInteger(measurement.repetitions));
+  assert.ok(measurement.repetitions > 0);
+  assert.equal(measurement.repetitions % 2, 0);
 }
 
 function instrumentPartialMarkdown() {
