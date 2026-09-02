@@ -27,7 +27,7 @@ jobs:
       - run: pnpm typecheck
 
       - name: Test benchmark infrastructure
-        run: node --test tools/bench-json.test.mjs
+        run: pnpm test:benchmarks
 
   package:
     name: Package — ${{ matrix.package }}

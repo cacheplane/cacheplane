@@ -53,6 +53,22 @@ test('defines the paired Markdown comparison package script', () => {
   );
 });
 
+test('defines and invokes the deterministic benchmark test script', () => {
+  const packageJson = JSON.parse(readFileSync(
+    new URL('../package.json', import.meta.url),
+    'utf8',
+  ));
+
+  assert.equal(
+    packageJson.scripts['test:benchmarks'],
+    'pnpm --filter @cacheplane/partial-markdown build && node --test tools/bench-*.test.mjs',
+  );
+  assert.equal(
+    packageJson.scripts.test,
+    "pnpm -r --workspace-concurrency=1 --filter './packages/*' test && pnpm test:benchmarks",
+  );
+});
+
 test('defines the exact Markdown workload names', () => {
   const names = markdownWorkloads.map((workload) => workload.name);
 
