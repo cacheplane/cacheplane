@@ -83,18 +83,44 @@ test('all Markdown chunkers preserve every byte and emit no empty chunks', () =>
   }
 });
 
+test('64-byte chunking preserves astral code points across byte boundaries', () => {
+  const astralCharacter = '\u{1F600}';
+  const workload = { input: `${'a'.repeat(63)}${astralCharacter}tail` };
+  const chunker = markdownChunkers.find((entry) => entry.name === '64-byte');
+
+  const { input, chunks } = chunksForMarkdownWorkload(workload, chunker);
+
+  assert.equal(chunks.join(''), input);
+  assert.ok(chunks.every((chunk) => Buffer.byteLength(chunk) <= 64));
+  assert.ok(chunks.every((chunk) => !hasLoneSurrogate(chunk)));
+});
+
 test('character chunking caps long effective inputs at exactly 4,096 characters', () => {
-  const longWorkloads = markdownWorkloads.filter((workload) => workload.input.length >= 4_096);
+  const longWorkloads = markdownWorkloads.filter((workload) => (
+    Array.from(workload.input).length >= 4_096
+  ));
   const chunker = markdownChunkers.find((entry) => entry.name === 'character');
 
   assert.ok(longWorkloads.length > 0);
   for (const workload of longWorkloads) {
     const { input, chunks } = chunksForMarkdownWorkload(workload, chunker);
 
-    assert.equal(input.length, 4_096);
+    assert.equal(Array.from(input).length, 4_096);
     assert.equal(chunks.length, 4_096);
-    assert.ok(chunks.every((chunk) => chunk.length === 1));
+    assert.ok(chunks.every((chunk) => Array.from(chunk).length === 1));
   }
+});
+
+test('character chunking keeps an astral code point intact at the prefix boundary', () => {
+  const astralCharacter = '\u{1F600}';
+  const workload = { input: `${'a'.repeat(4_095)}${astralCharacter}trailing text` };
+  const chunker = markdownChunkers.find((entry) => entry.name === 'character');
+
+  const { input, chunks } = chunksForMarkdownWorkload(workload, chunker);
+
+  assert.equal(Array.from(input).length, 4_096);
+  assert.ok(input.endsWith(astralCharacter));
+  assert.equal(chunks.join(''), input);
 });
 
 test('uses implementation/workload/chunking Markdown measurement keys', () => {
@@ -129,3 +155,17 @@ test('defines exactly 48 unique Markdown benchmark scenarios', () => {
   assert.equal(new Set(keys).size, 48);
   assert.deepEqual([...keys].sort(), [...expectedKeys].sort());
 });
+
+function hasLoneSurrogate(input) {
+  for (let index = 0; index < input.length; index += 1) {
+    const codeUnit = input.charCodeAt(index);
+    if (codeUnit >= 0xD800 && codeUnit <= 0xDBFF) {
+      const nextCodeUnit = input.charCodeAt(index + 1);
+      if (nextCodeUnit < 0xDC00 || nextCodeUnit > 0xDFFF) return true;
+      index += 1;
+    } else if (codeUnit >= 0xDC00 && codeUnit <= 0xDFFF) {
+      return true;
+    }
+  }
+  return false;
+}

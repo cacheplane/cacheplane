@@ -65,7 +65,7 @@ export const markdownWorkloads = Object.freeze([
 
 export const markdownChunkers = Object.freeze([
   Object.freeze({ name: 'whole', split: (input) => [input] }),
-  Object.freeze({ name: '64-byte', split: (input) => splitEvery(input, 64) }),
+  Object.freeze({ name: '64-byte', split: (input) => splitEveryUtf8Bytes(input, 64) }),
   Object.freeze({ name: 'character', maxInputLength: 4_096, split: (input) => Array.from(input) }),
 ]);
 
@@ -79,7 +79,7 @@ export const markdownChunkers = Object.freeze([
 export function chunksForMarkdownWorkload(markdownWorkload, chunker) {
   const input = chunker.maxInputLength === undefined
     ? markdownWorkload.input
-    : markdownWorkload.input.slice(0, chunker.maxInputLength);
+    : Array.from(markdownWorkload.input).slice(0, chunker.maxInputLength).join('');
   return { input, chunks: chunker.split(input) };
 }
 
@@ -101,9 +101,22 @@ function workload(
   });
 }
 
-function splitEvery(input, size) {
-  return Array.from(
-    { length: Math.ceil(input.length / size) },
-    (_, index) => input.slice(index * size, (index + 1) * size),
-  );
+function splitEveryUtf8Bytes(input, maximumBytes) {
+  const chunks = [];
+  let chunk = '';
+  let chunkBytes = 0;
+
+  for (const codePoint of input) {
+    const codePointBytes = Buffer.byteLength(codePoint);
+    if (chunkBytes + codePointBytes > maximumBytes && chunk.length > 0) {
+      chunks.push(chunk);
+      chunk = '';
+      chunkBytes = 0;
+    }
+    chunk += codePoint;
+    chunkBytes += codePointBytes;
+  }
+
+  if (chunk.length > 0) chunks.push(chunk);
+  return chunks;
 }
