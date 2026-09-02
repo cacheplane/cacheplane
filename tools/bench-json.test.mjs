@@ -2,14 +2,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  compareReports,
-  comparisonExitCode,
-  classifyPairedMeasurements,
   median,
   medianConfidenceInterval,
-  parseOptions,
+  nextPairedSampleCount,
   relativeMedianAbsoluteDeviation,
   repetitionsForTargetDuration,
+} from './bench-lib.mjs';
+import {
+  classifyPairedMeasurements,
+  compareReports,
+  comparisonExitCode,
+  measurementKey,
+  parseOptions,
 } from './bench-json-lib.mjs';
 import * as benchmarkLibrary from './bench-json-lib.mjs';
 import {
@@ -155,11 +159,40 @@ test('classifies every paired measurement from its confidence interval', () => {
 });
 
 test('escalates inconclusive paired comparisons through bounded sample counts', () => {
-  assert.equal(typeof benchmarkLibrary.nextPairedSampleCount, 'function');
+  assert.equal(nextPairedSampleCount(31), 101);
+  assert.equal(nextPairedSampleCount(101), 301);
+  assert.equal(nextPairedSampleCount(301), null);
+});
 
-  assert.equal(benchmarkLibrary.nextPairedSampleCount(31), 101);
-  assert.equal(benchmarkLibrary.nextPairedSampleCount(101), 301);
-  assert.equal(benchmarkLibrary.nextPairedSampleCount(301), null);
+test('preserves the JSON benchmark compatibility surface', () => {
+  const baseline = report({ medianMs: 100, retainedHeapBytes: 100_000, relativeMad: 0.01 });
+  const candidate = report({ medianMs: 112, retainedHeapBytes: 120_000, relativeMad: 0.01 });
+
+  assert.deepEqual(Object.keys(benchmarkLibrary).sort(), [
+    'classifyPairedMeasurements',
+    'compareReports',
+    'comparisonExitCode',
+    'measurementKey',
+    'median',
+    'medianConfidenceInterval',
+    'nextPairedSampleCount',
+    'parseOptions',
+    'relativeMedianAbsoluteDeviation',
+    'repetitionsForTargetDuration',
+  ]);
+  assert.equal(measurementKey({
+    implementation: 'partial-json',
+    workload: 'generative-ui',
+    chunking: 'character',
+  }), 'partial-json/generative-ui/character');
+  assert.deepEqual(compareReports(baseline, candidate), {
+    regressions: [
+      'json-stream/small/whole time: 100.00ms -> 112.00ms (+12.0%)',
+      'json-stream/small/whole retained heap: 98 KiB -> 117 KiB (+20.0%)',
+    ],
+    inconclusive: [],
+    skipped: [],
+  });
 });
 
 function report(measurement) {
