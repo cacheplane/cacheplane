@@ -292,59 +292,51 @@ test('prepared leaf-change runs alternate an equal-length text mutation on every
   assert.equal(values[0].length, values[1].length);
 });
 
-test('prepared citation-change runs replace only the changing citation source path', () => {
+test('prepared citation-change runs mutate one citation leaf on a stable live root', () => {
   const workload = markdownWorkloads.find((entry) => entry.name === 'references');
   const fixtureInput = workload.input;
   const instrumented = instrumentPartialMarkdown();
 
   const run = createPreparedMaterializeRun(instrumented.module, 'citation-change', workload);
-  const first = run();
-  const second = run();
-  const third = run();
+  const mutationSnapshots = [run(), run(), run()];
   const sourceRoots = instrumented.materializedRoots;
-  const changedCitationId = findChangedMapKey(sourceRoots[0].citations, sourceRoots[1].citations);
-  const values = [first, second, third].map((snapshot) => (
+  const snapshots = instrumented.materializedSnapshots;
+  const changedCitationId = findChangedMapKey(
+    snapshots[0].citations,
+    snapshots[1].citations,
+  );
+  const values = mutationSnapshots.map((snapshot) => (
     findText(snapshot.citations.get(changedCitationId)).text
   ));
 
   assert.equal(instrumented.parserCreations(), 1);
   assert.equal(sourceRoots.length, 4);
+  assert.equal(snapshots.length, 4);
+  assert.ok(mutationSnapshots.every((snapshot, index) => snapshot === snapshots[index + 1]));
   assert.equal(workload.input, fixtureInput);
-  assert.notEqual(first, second);
-  assert.notEqual(second, third);
-  assert.notEqual(sourceRoots[0], sourceRoots[1]);
-  assert.notEqual(sourceRoots[1], sourceRoots[2]);
-  assert.notEqual(sourceRoots[2], sourceRoots[3]);
-  assert.notEqual(sourceRoots[0].citations, sourceRoots[1].citations);
-  assert.notEqual(sourceRoots[1].citations, sourceRoots[2].citations);
-  assert.notEqual(sourceRoots[2].citations, sourceRoots[3].citations);
-  assert.equal(sourceRoots[0].linkDefinitions, sourceRoots[1].linkDefinitions);
-  assert.equal(sourceRoots[1].linkDefinitions, sourceRoots[2].linkDefinitions);
-  assert.equal(sourceRoots[2].linkDefinitions, sourceRoots[3].linkDefinitions);
-  assert.equal(
-    findText(sourceRoots[0].citations.get(changedCitationId)),
-    findText(sourceRoots[1].citations.get(changedCitationId)),
-  );
-  assert.equal(
-    findText(sourceRoots[1].citations.get(changedCitationId)),
-    findText(sourceRoots[2].citations.get(changedCitationId)),
-  );
-  assert.equal(
-    findText(sourceRoots[2].citations.get(changedCitationId)),
-    findText(sourceRoots[3].citations.get(changedCitationId)),
-  );
+  assert.ok(sourceRoots.every((root) => root === sourceRoots[0]));
   assert.equal(values[0], values[2]);
   assert.notEqual(values[0], values[1]);
   assert.equal(values[0].length, values[1].length);
 
-  for (let index = 1; index < sourceRoots.length; index += 1) {
-    const previous = sourceRoots[index - 1].citations;
-    const current = sourceRoots[index].citations;
+  for (let index = 1; index < snapshots.length; index += 1) {
+    const previous = snapshots[index - 1];
+    const current = snapshots[index];
 
-    assert.notEqual(current.get(changedCitationId), previous.get(changedCitationId));
-    for (const [citationId, definition] of previous) {
+    assert.notEqual(current, previous);
+    assert.notEqual(current.citations, previous.citations);
+    assert.notEqual(
+      current.citations.get(changedCitationId),
+      previous.citations.get(changedCitationId),
+    );
+    assert.notEqual(
+      findText(current.citations.get(changedCitationId)),
+      findText(previous.citations.get(changedCitationId)),
+    );
+    assert.equal(current.linkDefinitions, previous.linkDefinitions);
+    for (const [citationId, definition] of previous.citations) {
       if (citationId !== changedCitationId) {
-        assert.equal(current.get(citationId), definition);
+        assert.equal(current.citations.get(citationId), definition);
       }
     }
   }
@@ -390,6 +382,7 @@ function hasLoneSurrogate(input) {
 function instrumentPartialMarkdown() {
   let parserCreations = 0;
   const materializedRoots = [];
+  const materializedSnapshots = [];
 
   return {
     module: {
@@ -399,10 +392,13 @@ function instrumentPartialMarkdown() {
       },
       materialize(root) {
         materializedRoots.push(root);
-        return partialMarkdown.materialize(root);
+        const snapshot = partialMarkdown.materialize(root);
+        materializedSnapshots.push(snapshot);
+        return snapshot;
       },
     },
     materializedRoots,
+    materializedSnapshots,
     parserCreations: () => parserCreations,
   };
 }

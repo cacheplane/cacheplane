@@ -58,7 +58,7 @@ export function createPreparedMaterializeRun(module, implementation, workload) {
   parser.push(workload.input);
   parser.finish();
 
-  let root = parser.root;
+  const root = parser.root;
   if (!root) throw new Error('Prepared Markdown workload did not produce a document root');
 
   if (implementation === 'unchanged') {
@@ -95,15 +95,6 @@ export function createPreparedMaterializeRun(module, implementation, workload) {
     if (!definition) throw new Error('Prepared Markdown citation mutation target disappeared');
 
     target.textLeaf.text = useAlternate ? alternate : original;
-    const citations = new Map(root.citations);
-    citations.set(target.citationId, {
-      ...definition,
-    });
-    root = {
-      ...root,
-      citations,
-      linkDefinitions: root.linkDefinitions,
-    };
     useAlternate = !useAlternate;
     return module.materialize(root);
   };
