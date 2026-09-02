@@ -6,11 +6,11 @@ import {
   median,
   medianConfidenceInterval,
   relativeMedianAbsoluteDeviation,
-  repetitionsForTargetDuration,
 } from './bench-lib.mjs';
 import {
   assertMarkdownComparisonRunOutputsEquivalent,
   markdownComparisonCalibrationDuration,
+  markdownComparisonRepetitionsForScenario,
   parseMarkdownComparisonWorkerArguments,
 } from './bench-markdown-lib.mjs';
 import {
@@ -57,12 +57,12 @@ warm(candidateRun);
 
 const baselineCalibration = calibrate(baselineRun);
 const candidateCalibration = calibrate(candidateRun);
-const repetitions = repetitionsForTargetDuration(
+const repetitions = markdownComparisonRepetitionsForScenario(
   markdownComparisonCalibrationDuration(
     baselineCalibration,
     candidateCalibration,
   ),
-  50,
+  scenario,
 );
 const baselineDurations = [];
 const candidateDurations = [];

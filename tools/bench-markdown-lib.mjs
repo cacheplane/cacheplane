@@ -2,6 +2,7 @@
 import {
   median,
   relativeMedianAbsoluteDeviation,
+  repetitionsForTargetDuration,
 } from './bench-lib.mjs';
 import { isDeepStrictEqual } from 'node:util';
 import {
@@ -443,6 +444,21 @@ export function markdownComparisonCalibrationDuration(
 }
 
 /**
+ * Calibrates paired repetitions while preserving complete prepared mutation cycles.
+ *
+ * @param {number} durationMs Robust single-run calibration duration.
+ * @param {{ implementation: string, workload: string, chunking: string }} scenario Compared scenario.
+ * @returns {number} Repetition count bounded to 10,000.
+ */
+export function markdownComparisonRepetitionsForScenario(durationMs, scenario) {
+  const repetitions = repetitionsForTargetDuration(durationMs, 50);
+  if (!isPreparedMutationScenario(scenario) || repetitions % 2 === 0) {
+    return repetitions;
+  }
+  return Math.min(repetitions + 1, 10_000);
+}
+
+/**
  * Asserts that baseline and candidate produce deeply equivalent output.
  *
  * @param {unknown} baselineOutput Baseline scenario output.
@@ -475,10 +491,7 @@ export function assertMarkdownComparisonRunOutputsEquivalent(
   candidateRun,
   scenario,
 ) {
-  const checks = scenario.chunking === 'prepared' && (
-    scenario.implementation === 'leaf-change' ||
-    scenario.implementation === 'citation-change'
-  ) ? 2 : 1;
+  const checks = isPreparedMutationScenario(scenario) ? 2 : 1;
 
   for (let index = 0; index < checks; index += 1) {
     assertMarkdownComparisonOutputsEquivalent(
@@ -487,6 +500,13 @@ export function assertMarkdownComparisonRunOutputsEquivalent(
       scenario,
     );
   }
+}
+
+function isPreparedMutationScenario(scenario) {
+  return scenario.chunking === 'prepared' && (
+    scenario.implementation === 'leaf-change' ||
+    scenario.implementation === 'citation-change'
+  );
 }
 
 /**

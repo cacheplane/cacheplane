@@ -13,6 +13,7 @@ import {
   formatMarkdownBenchmarkProgress,
   markdownComparisonExitCode,
   markdownComparisonCalibrationDuration,
+  markdownComparisonRepetitionsForScenario,
   markdownComparisonWorkerError,
   markdownComparisonWorkerTimeoutMs,
   markdownBenchmarkWorkerError,
@@ -724,6 +725,74 @@ test('calibrates paired Markdown repetitions from the slower five-run median', (
   );
 
   assert.equal(duration, 0.26);
+});
+
+test('paired prepared mutation measurements complete two-state cycles from either phase', () => {
+  const scenarios = [
+    { implementation: 'leaf-change', workload: 'long-prose', chunking: 'prepared' },
+    { implementation: 'citation-change', workload: 'references', chunking: 'prepared' },
+  ];
+  const startingPhases = [0, 1];
+
+  const measurements = scenarios.flatMap((scenario) => (
+    startingPhases.map((startingPhase) => {
+      const repetitions = markdownComparisonRepetitionsForScenario(20, scenario);
+      const states = Array.from(
+        { length: repetitions },
+        (_, index) => (startingPhase + index) % 2,
+      );
+
+      return {
+        scenario,
+        startingPhase,
+        repetitions,
+        zeroStates: states.filter((state) => state === 0).length,
+        oneStates: states.filter((state) => state === 1).length,
+        endingPhase: (startingPhase + repetitions) % 2,
+      };
+    })
+  ));
+
+  for (const measurement of measurements) {
+    assert.equal(measurement.repetitions, 4, measurement.scenario.implementation);
+    assert.equal(measurement.zeroStates, 2, measurement.scenario.implementation);
+    assert.equal(measurement.oneStates, 2, measurement.scenario.implementation);
+    assert.equal(
+      measurement.endingPhase,
+      measurement.startingPhase,
+      measurement.scenario.implementation,
+    );
+  }
+});
+
+test('paired repetition hardening preserves other scenarios and the 10,000 bound', () => {
+  const scenarios = {
+    source: { implementation: 'events', workload: 'mixed', chunking: 'whole' },
+    unchanged: { implementation: 'unchanged', workload: 'long-prose', chunking: 'prepared' },
+    leafChange: { implementation: 'leaf-change', workload: 'long-prose', chunking: 'prepared' },
+    citationChange: {
+      implementation: 'citation-change',
+      workload: 'references',
+      chunking: 'prepared',
+    },
+  };
+
+  const repetitions = {
+    source: markdownComparisonRepetitionsForScenario(20, scenarios.source),
+    unchanged: markdownComparisonRepetitionsForScenario(20, scenarios.unchanged),
+    leafChange: markdownComparisonRepetitionsForScenario(20, scenarios.leafChange),
+    citationChangeAtMaximum: markdownComparisonRepetitionsForScenario(
+      0,
+      scenarios.citationChange,
+    ),
+  };
+
+  assert.deepEqual(repetitions, {
+    source: 3,
+    unchanged: 3,
+    leafChange: 4,
+    citationChangeAtMaximum: 10_000,
+  });
 });
 
 test('asserts Markdown comparison output equivalence with scenario context', () => {
