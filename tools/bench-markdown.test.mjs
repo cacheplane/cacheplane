@@ -6,6 +6,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
   assertMarkdownComparisonOutputsEquivalent,
+  assertMarkdownComparisonRunOutputsEquivalent,
   classifyMarkdownPairedMeasurements,
   createMarkdownComparisonReport,
   createMarkdownBenchmarkReport,
@@ -743,6 +744,54 @@ test('asserts Markdown comparison output equivalence with scenario context', () 
   );
 });
 
+test('prepared mutation comparison validates both consecutive toggle states from fresh runs', () => {
+  const scenarios = [
+    { implementation: 'leaf-change', workload: 'long-prose' },
+    { implementation: 'citation-change', workload: 'references' },
+  ];
+
+  const results = scenarios.map(({ implementation, workload: workloadName }) => {
+    const workload = markdownWorkloads.find((entry) => entry.name === workloadName);
+    const baselineRun = createPreparedMaterializeRun(
+      partialMarkdown,
+      implementation,
+      workload,
+    );
+    const candidateRun = createPreparedMaterializeRun(
+      partialMarkdown,
+      implementation,
+      workload,
+    );
+    const scenario = { implementation, workload: workloadName, chunking: 'prepared' };
+    let baselineCalls = 0;
+    let candidateCalls = 0;
+
+    const error = captureError(() => assertMarkdownComparisonRunOutputsEquivalent(
+      () => {
+        baselineCalls += 1;
+        return baselineRun();
+      },
+      () => {
+        candidateCalls += 1;
+        const output = candidateRun();
+        return candidateCalls === 2 ? { ...output, type: 'mismatch' } : output;
+      },
+      scenario,
+    ));
+
+    return { scenario, baselineCalls, candidateCalls, error };
+  });
+
+  for (const { scenario, baselineCalls, candidateCalls, error } of results) {
+    assert.equal(baselineCalls, 2, scenario.implementation);
+    assert.equal(candidateCalls, 2, scenario.implementation);
+    assert.match(
+      error.message,
+      new RegExp(`${markdownMeasurementKey(scenario)}.*outputs differ`, 'i'),
+    );
+  }
+});
+
 test('reports retained-heap instability when a zero median hides positive samples', () => {
   const sparsePositive = [0, 0, 0, 0, 32_768, 65_536, 131_072];
   const stableNonzero = [90, 95, 100, 100, 100, 105, 110];
@@ -1085,6 +1134,15 @@ function pairedMeasurement(overrides = {}) {
     upperRatio: 1.15,
     ...overrides,
   };
+}
+
+function captureError(run) {
+  try {
+    run();
+  } catch (error) {
+    return error;
+  }
+  return undefined;
 }
 
 function instrumentPartialMarkdown() {

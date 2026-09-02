@@ -9,7 +9,7 @@ import {
   repetitionsForTargetDuration,
 } from './bench-lib.mjs';
 import {
-  assertMarkdownComparisonOutputsEquivalent,
+  assertMarkdownComparisonRunOutputsEquivalent,
   markdownComparisonCalibrationDuration,
   parseMarkdownComparisonWorkerArguments,
 } from './bench-markdown-lib.mjs';
@@ -47,9 +47,9 @@ const [baselineModule, candidateModule] = await Promise.all([
 const baselineRun = createScenarioRun(baselineModule);
 const candidateRun = createScenarioRun(candidateModule);
 
-assertMarkdownComparisonOutputsEquivalent(
-  baselineRun(),
-  candidateRun(),
+assertMarkdownComparisonRunOutputsEquivalent(
+  baselineRun,
+  candidateRun,
   scenario,
 );
 warm(baselineRun);

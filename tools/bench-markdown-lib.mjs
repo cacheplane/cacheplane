@@ -463,6 +463,33 @@ export function assertMarkdownComparisonOutputsEquivalent(
 }
 
 /**
+ * Validates equivalent outputs from fresh baseline and candidate scenario runs.
+ *
+ * @param {() => unknown} baselineRun Fresh baseline benchmark invocation.
+ * @param {() => unknown} candidateRun Fresh candidate benchmark invocation.
+ * @param {{ implementation: string, workload: string, chunking: string }} scenario Compared scenario.
+ * @returns {void}
+ */
+export function assertMarkdownComparisonRunOutputsEquivalent(
+  baselineRun,
+  candidateRun,
+  scenario,
+) {
+  const checks = scenario.chunking === 'prepared' && (
+    scenario.implementation === 'leaf-change' ||
+    scenario.implementation === 'citation-change'
+  ) ? 2 : 1;
+
+  for (let index = 0; index < checks; index += 1) {
+    assertMarkdownComparisonOutputsEquivalent(
+      baselineRun(),
+      candidateRun(),
+      scenario,
+    );
+  }
+}
+
+/**
  * Converts an unsuccessful paired worker result into a scenario-specific error.
  *
  * @param {{ error?: Error & { code?: string }, status: number | null, signal?: string | null, stderr?: string }} worker Worker process result.
