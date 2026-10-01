@@ -161,6 +161,12 @@ such as `-`, `1.`, and `1e+`; completed malformed grammar is
 
 ## Structural-Sharing Snapshots
 
+Materialized object values preserve JSON keys as own enumerable, writable,
+configurable data properties on ordinary objects, including names such as
+`__proto__`, `constructor`, and `toString`. Duplicate keys keep the last value,
+matching `JSON.parse`. Defining a JSON key does not change the result object's
+prototype. Empty-key parsing requires the corresponding json-stream kernel fix.
+
 `materialize(node)` converts a parser node tree into a plain JavaScript value.
 It uses a `WeakMap` cache keyed by node identity, so unchanged subtrees return
 the same object reference across calls.

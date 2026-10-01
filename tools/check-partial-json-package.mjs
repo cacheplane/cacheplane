@@ -113,6 +113,23 @@ function smokeInstalledPackage(directory, inputType) {
     const parser = api.createPartialJsonParser();
     parser.push('{"ok":true}');
     if (JSON.stringify(api.materialize(parser.root)) !== '{"ok":true}') process.exit(3);
+    const text = ${JSON.stringify('{"":1,"__proto__":{"value":2},"constructor":3}')};
+    for (let split = 0; split <= text.length; split++) {
+      let state = api.push(api.create(), text.slice(0, split));
+      state = api.finish(api.push(state, text.slice(split)));
+      if (state.error || !state.complete) process.exit(4);
+      const candidate = api.createPartialJsonParser();
+      candidate.push(text.slice(0, split));
+      candidate.push(text.slice(split));
+      candidate.finish();
+      for (const value of [api.resolve(state), api.materialize(candidate.root)]) {
+        if (JSON.stringify(value) !== text) process.exit(5);
+        if (Object.getPrototypeOf(value) !== Object.prototype) process.exit(6);
+        const descriptor = Object.getOwnPropertyDescriptor(value, '__proto__');
+        if (!descriptor || !descriptor.enumerable || !descriptor.writable ||
+            !descriptor.configurable || descriptor.value.value !== 2) process.exit(7);
+      }
+    }
   `;
   execFileSync(process.execPath, [`--input-type=${inputType}`, '--eval', script], {
     cwd: directory,

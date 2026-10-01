@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Accept empty object keys, including nested and duplicate empty keys, across
+  incremental chunk boundaries.
+- Preserve `__proto__` as an own enumerable data property in resolved objects,
+  without changing their prototype or invoking inherited setters.
+
 Releases up to and including `0.0.3` were cut from `cacheplane/pretable`, where
 this package originally lived. Entries below `0.0.3` are the changesets-generated
 history from that repo, preserved verbatim.
