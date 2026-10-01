@@ -1,12 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.3.1
 
 ### Fixed
 
 - Materialize `__proto__` as an own enumerable data property without changing
-  the result object's prototype or invoking inherited setters. Empty-key
-  parsing also requires the corresponding json-stream kernel fix.
+  the result object's prototype or invoking inherited setters.
+- Require json-stream ^0.1.1 so empty keys parse correctly across incremental
+  chunk boundaries.
 
 ## 0.3.0 — 2026-09-01
 
