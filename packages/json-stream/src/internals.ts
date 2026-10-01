@@ -120,7 +120,13 @@ export function recomputeContainerValue(
     const values: Record<string, JsonValue> = {};
     for (let i = 0; i < node.keys.length; i += 1) {
       const key = node.keys[i];
-      values[key] = nodes[node.children[i]].value as JsonValue;
+      // JSON keys are data, including names inherited from Object.prototype.
+      Object.defineProperty(values, key, {
+        value: nodes[node.children[i]].value as JsonValue,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
     const resolved = preserveObjectValue(node.value, node.keys, values);
     if (resolved === node.value) return node;
@@ -231,7 +237,7 @@ export function openNode(
       nodes = replaceNode(nodes, parentId, updated);
       nodes = propagateResolved(nodes, parentId);
     } else if (parent.kind === "object") {
-      if (!pendingKey || pendingKeyOwner !== parentId) {
+      if (pendingKey === null || pendingKeyOwner !== parentId) {
         return {
           state: toErrorState(
             state,

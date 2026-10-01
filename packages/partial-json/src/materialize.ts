@@ -80,7 +80,13 @@ export function materialize(node: JsonNode): unknown {
       const obj = node as JsonObjectNode;
       const result: Record<string, unknown> = {};
       for (const [key, child] of obj.children) {
-        result[key] = materialize(child);
+        // Do not invoke inherited setters for valid JSON property names.
+        Object.defineProperty(result, key, {
+          value: materialize(child),
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
       }
       value = result;
       break;

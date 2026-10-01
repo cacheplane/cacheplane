@@ -57,6 +57,12 @@ that is still arriving, and know not to treat it as final.
 
 ## Structured Errors
 
+Resolved object values preserve JSON keys as own enumerable, writable,
+configurable data properties on ordinary objects, including the empty key and
+names such as `__proto__`, `constructor`, and `toString`. Duplicate keys keep the
+last value, matching `JSON.parse`. Defining a JSON key does not change the
+result object's prototype.
+
 When parsing fails, `state.error` contains a `StreamError` with source location,
 a human-readable `message`, and a stable `code` from the public
 `StreamErrorCode` union:
