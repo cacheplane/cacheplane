@@ -165,7 +165,7 @@ Materialized object values preserve JSON keys as own enumerable, writable,
 configurable data properties on ordinary objects, including names such as
 `__proto__`, `constructor`, and `toString`. Duplicate keys keep the last value,
 matching `JSON.parse`. Defining a JSON key does not change the result object's
-prototype. Empty-key parsing requires the corresponding json-stream kernel fix.
+prototype. The json-stream ^0.1.1 dependency also preserves empty keys while parsing.
 
 `materialize(node)` converts a parser node tree into a plain JavaScript value.
 It uses a `WeakMap` cache keyed by node identity, so unchanged subtrees return
