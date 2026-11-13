@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.13 — 2026-11-12
+
+### Fixed
+
+- An `_` run between two word characters no longer opens or closes emphasis
+  (CommonMark §6.2), so identifiers such as `snake_case_word`,
+  `my__private__helper`, and JSON keys like `"flight_number"` stay literal,
+  including when they split across `push()` chunks and on the open streaming
+  line. Intraword `*` emphasis is unchanged.
+
+### Performance
+
+- Lines with many unclosable `_` openers no longer scan to the end of the line
+  per opener, and optimistic projection on the open line nests only the last
+  unclosed opener.
+
 ## 0.5.12 — 2026-09-02
 
 ### Performance
