@@ -125,6 +125,17 @@ export function parseInline(state: InternalState, parentId: number, rawLine: str
 
     // Emphasis / strong / strikethrough
     if (ch === '*' || ch === '_' || ch === '~') {
+      // An `_` run that follows a word character is intraword (CommonMark
+      // §6.2): it cannot open emphasis, so the whole run is literal text.
+      // Consuming the full run keeps `my__private` from retrying its second
+      // `_` as an opener.
+      if (ch === '_' && isWordChar(line[cursor.i - 1])) {
+        let k = cursor.i;
+        while (line[k] === '_') k++;
+        s = appendInlineNode(s, parentId, makeText(s, parentId, line.slice(cursor.i, k)));
+        cursor.i = k;
+        continue;
+      }
       const result = matchPairedRun(line, cursor.i, ch, optimistic);
       if (result) {
         // Recursively parse the inner content via a phantom parent.
@@ -293,12 +304,17 @@ function matchPairedRun(
   if (ch === '~' && runLength !== 2) return null;
   if ((ch === '*' || ch === '_') && runLength > 2) return null;
 
-  let j = i;
+  // Skip the scan when no `_` closer of this length starts at or after the
+  // opener; otherwise every opener in a line with no valid closer (` _a _a…`)
+  // would rescan to end of line.
+  const underscores = ch === '_' ? underscoreIndex(line) : null;
+  let j = underscores && underscores.closers[runLength]! < i ? line.length : i;
   while (j < line.length) {
     if (line[j] === ch && !isBackslashEscaped(line, j)) {
       let k = j;
       while (k < line.length && line[k] === ch) k++;
-      if (k - j === runLength) {
+      // An `_` run followed by a word character is intraword and cannot close.
+      if (k - j === runLength && !(ch === '_' && isWordChar(line[k]))) {
         return { contentStart: i, contentEnd: j, endIndex: k, runLength };
       }
       j = k;
@@ -310,10 +326,63 @@ function matchPairedRun(
   // as an in-progress construct spanning to end-of-line — but only when content
   // immediately follows the opener (a left-flanking guard, so `2 * 3` and a
   // trailing `**` stay literal, not a spurious emphasis).
-  if (optimistic && i < line.length && line[i] !== ' ' && line[i] !== '\t') {
+  // An unclosed `_` projects only when no later `_` could open: otherwise each
+  // opener in `_a _b _c…` would nest the rest of the line one level deeper.
+  if (
+    optimistic && i < line.length && line[i] !== ' ' && line[i] !== '\t' &&
+    !(underscores && underscores.lastOpener > start)
+  ) {
     return { contentStart: i, contentEnd: line.length, endIndex: line.length, runLength };
   }
   return null;
+}
+
+interface UnderscoreIndex {
+  /** Start of the last run of each length (1 or 2) that can close; -1 when none. */
+  readonly closers: readonly number[];
+  /** Start of the last run (length 1 or 2) that can open; -1 when none. */
+  readonly lastOpener: number;
+}
+
+let indexedLine: string | null = null;
+let indexed: UnderscoreIndex = { closers: [-1, -1, -1], lastOpener: -1 };
+
+/**
+ * One pass over the unescaped `_` runs of `line`, mirroring the run scan in
+ * `matchPairedRun`: a run closes when no word character follows it and opens
+ * when none precedes it (CommonMark §6.2). Memoized on the last line seen.
+ */
+function underscoreIndex(line: string): UnderscoreIndex {
+  if (line === indexedLine) return indexed;
+  const closers = [-1, -1, -1];
+  let lastOpener = -1;
+  let j = 0;
+  while (j < line.length) {
+    if (line[j] === '_' && !isBackslashEscaped(line, j)) {
+      let k = j;
+      while (k < line.length && line[k] === '_') k++;
+      if (k - j <= 2) {
+        if (!isWordChar(line[k])) closers[k - j] = j;
+        if (!isWordChar(line[j - 1])) lastOpener = j;
+      }
+      j = k;
+    } else {
+      j++;
+    }
+  }
+  indexedLine = line;
+  indexed = { closers, lastOpener };
+  return indexed;
+}
+
+const WORD_CHAR_RE = /[\p{L}\p{M}\p{N}]/u;
+
+/**
+ * True for a letter, mark or digit: neither whitespace nor punctuation, so an
+ * adjacent `_` run is flanked on that side by a word (CommonMark §6.2).
+ */
+function isWordChar(c: string | undefined): boolean {
+  return c !== undefined && WORD_CHAR_RE.test(c);
 }
 
 /** True when the char at `pos` is preceded by an odd run of backslashes (escaped). */
@@ -426,6 +495,12 @@ function matchTextRun(
   while (i < line.length) {
     const c = line[i];
     if (i > start && matchAutolinkLiteral(line, i)) break;
+    // An intraword `_` run can never open emphasis; keep it in this run so
+    // `snake_case_word` stays one text node.
+    if (c === '_' && isWordChar(line[i - 1])) {
+      while (line[i] === '_') text += line[i++];
+      continue;
+    }
     if (
       c === '*' || c === '_' || c === '~' || c === '`' ||
       c === '<' || c === '$' ||
