@@ -27,7 +27,7 @@ import {
   pushWarning,
   THEMATIC_BREAK_RE,
   ATX_HEADING_RE,
-  FENCE_OPEN_RE,
+  parseFenceOpener,
   BLOCKQUOTE_PREFIX_RE,
   CITATION_DEF_RE,
   LINK_DEF_RE,
@@ -165,11 +165,11 @@ function handleBlockLineInternal(
     return appendHeading(s, level, content);
   }
 
-  const fence = FENCE_OPEN_RE.exec(line);
+  const fence = parseFenceOpener(line);
   if (fence) {
     s = closeOpenParagraph(s, { closeBlockquote: !preserveBlockquote });
     s = closeOpenList(s);
-    return openFencedCodeBlock(s, fence[1] as '```' | '~~~', fence[2] ?? '');
+    return openFencedCodeBlock(s, fence.marker, fence.language, fence.meta);
   }
 
   const htmlKind = detectHtmlBlockStart(line, !isParagraphOpen(s));
@@ -288,12 +288,13 @@ function openFencedCodeBlock(
   state: InternalState,
   fenceChar: '```' | '~~~',
   language: string,
+  meta: string,
 ): InternalState {
   const docId = state.rootId!;
   const [s1, id] = allocId(state);
   const node: CodeBlockAstNode = {
     id, kind: 'code-block', parentId: docId, status: 'streaming',
-    variant: 'fenced', language, text: '',
+    variant: 'fenced', language, meta, text: '',
   };
   const s = appendChild(appendNode(s1, node), docId, id);
   return {

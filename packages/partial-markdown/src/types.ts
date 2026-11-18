@@ -168,7 +168,10 @@ export interface ListItemAstNode extends AstNodeBase {
 export interface CodeBlockAstNode extends AstNodeBase {
   kind: 'code-block';
   variant: 'fenced' | 'indented';
+  /** First word of a fenced block's info string; '' when absent or indented. */
   language: string;
+  /** Info string after the language (e.g. `title="a.ts"`), trimmed; '' when absent or indented. */
+  meta: string;
   text: string;
 }
 
@@ -464,7 +467,10 @@ export interface MarkdownListItemNode extends MarkdownNodeBase {
 export interface MarkdownCodeBlockNode extends MarkdownNodeBase {
   readonly type: 'code-block';
   variant: 'fenced' | 'indented';
+  /** First word of a fenced block's info string; '' when absent or indented. */
   language: string;
+  /** Info string after the language (e.g. `title="a.ts"`), trimmed; '' when absent or indented. */
+  meta: string;
   text: string;
 }
 

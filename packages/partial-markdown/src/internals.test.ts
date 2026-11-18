@@ -11,6 +11,7 @@ import {
   THEMATIC_BREAK_RE,
   ATX_HEADING_RE,
   FENCE_OPEN_RE,
+  parseFenceOpener,
   ORDERED_LIST_MARKER_RE,
   UNORDERED_LIST_MARKER_RE,
   BLOCKQUOTE_PREFIX_RE,
@@ -131,9 +132,23 @@ describe('internals.regex constants', () => {
   });
 
   it('FENCE_OPEN_RE matches ``` and ~~~ with optional info string', () => {
-    expect('```'.match(FENCE_OPEN_RE)?.[1]).toBe('```');
-    expect('```ts'.match(FENCE_OPEN_RE)?.[2]).toBe('ts');
-    expect('~~~python'.match(FENCE_OPEN_RE)?.[2]).toBe('python');
+    expect(FENCE_OPEN_RE.test('```')).toBe(true);
+    expect(FENCE_OPEN_RE.test('~~~python')).toBe(true);
+    expect(FENCE_OPEN_RE.test('```ts title="a.ts"')).toBe(true);
+    expect(FENCE_OPEN_RE.test('```js `x`')).toBe(false);
+    expect(FENCE_OPEN_RE.test('````')).toBe(false);
+  });
+
+  it('parseFenceOpener splits the info string into language and meta', () => {
+    expect(parseFenceOpener('```')).toEqual({ marker: '```', language: '', meta: '' });
+    expect(parseFenceOpener('```ts')).toEqual({ marker: '```', language: 'ts', meta: '' });
+    expect(parseFenceOpener('  ~~~python  ')).toEqual({ marker: '~~~', language: 'python', meta: '' });
+    expect(parseFenceOpener('```ts title="a.ts"  {1}  ')).toEqual({
+      marker: '```', language: 'ts', meta: 'title="a.ts"  {1}',
+    });
+    expect(parseFenceOpener('~~~sh `x`')).toEqual({ marker: '~~~', language: 'sh', meta: '`x`' });
+    expect(parseFenceOpener('```js `x`')).toBeNull();
+    expect(parseFenceOpener('    ```')).toBeNull();
   });
 
   it('list marker regexes recognize ordered and unordered markers', () => {

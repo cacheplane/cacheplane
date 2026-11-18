@@ -15,8 +15,29 @@ export const THEMATIC_BREAK_RE = /^\s*(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,}
 /** Matches ATX headings: capture[1] = '#'..'######', capture[2] = content. */
 export const ATX_HEADING_RE = /^\s{0,3}(#{1,6})(?:\s+(.*?))?\s*#*\s*$/;
 
-/** Matches a fenced code block opener. capture[1] = '```' or '~~~', capture[2] = info string. */
-export const FENCE_OPEN_RE = /^\s{0,3}(```|~~~)\s*([^\s`~]*)\s*$/;
+/**
+ * Matches a fenced code block opener (CommonMark §4.5). capture[1] = '```' or
+ * '~~~', capture[2] = trimmed info string. A backtick fence's info string may
+ * not contain backticks; a tilde fence's may contain anything.
+ */
+export const FENCE_OPEN_RE = /^\s{0,3}(?:(```)(?!`)[ \t]*([^`]*?)|(~~~)(?!~)[ \t]*(.*?))[ \t]*$/;
+
+export interface FenceOpener {
+  marker: '```' | '~~~';
+  /** First word of the info string. */
+  language: string;
+  /** Rest of the info string after the language, trimmed. */
+  meta: string;
+}
+
+export function parseFenceOpener(line: string): FenceOpener | null {
+  const m = FENCE_OPEN_RE.exec(line);
+  if (!m) return null;
+  const marker = (m[1] ?? m[3]) as '```' | '~~~';
+  const info = m[2] ?? m[4] ?? '';
+  const split = /^(\S*)[ \t]*(.*)$/.exec(info)!;
+  return { marker, language: split[1]!, meta: split[2]! };
+}
 
 /** Ordered list marker: capture[1] = digits, capture[2] = '.' or ')'. */
 export const ORDERED_LIST_MARKER_RE = /^\s{0,3}(\d{1,9})([.)])\s+/;

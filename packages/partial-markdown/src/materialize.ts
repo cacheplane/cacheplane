@@ -292,7 +292,8 @@ function nodeMatchesVersion(node: MarkdownNode, version: ReadonlyArray<unknown>)
     case 'code-block':
       return node.variant === version[4]
         && node.language === version[5]
-        && node.text === version[6];
+        && node.meta === version[6]
+        && node.text === version[7];
     case 'text':
     case 'inline-code':
       return node.text === version[4];
@@ -355,7 +356,7 @@ function captureNodeVersion(node: MarkdownNode): ReadonlyArray<unknown> {
       version.push(node.task?.checked ?? null);
       break;
     case 'code-block':
-      version.push(node.variant, node.language, node.text);
+      version.push(node.variant, node.language, node.meta, node.text);
       break;
     case 'text':
     case 'inline-code':
