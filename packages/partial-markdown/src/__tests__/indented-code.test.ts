@@ -8,7 +8,10 @@ import { oneCharChunks, representativePartitions } from './helpers/chunking';
 
 const para = (...texts: string[]) => ({
   type: 'paragraph',
-  children: texts.flatMap((t, i) => (i === 0 ? [] : [{ type: 'soft-break' }]).concat([{ type: 'text', text: t }] as never[])),
+  children: texts.flatMap((t, i) => [
+    ...(i === 0 ? [] : [{ type: 'soft-break' }]),
+    { type: 'text', text: t },
+  ]),
 });
 const code = (text: string) => ({ type: 'code-block', variant: 'indented', language: '', meta: '', text });
 
