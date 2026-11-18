@@ -27,7 +27,7 @@ import {
   pushWarning,
   THEMATIC_BREAK_RE,
   ATX_HEADING_RE,
-  FENCE_OPEN_RE,
+  parseFenceOpener,
   BLOCKQUOTE_PREFIX_RE,
   CITATION_DEF_RE,
   LINK_DEF_RE,
@@ -65,6 +65,11 @@ function handleBlockLineInternal(
   if (state.mode === 'html-block') return appendHtmlBlockLine({ ...state, lineBuffer: '' }, line);
   if (state.mode === 'math-display') {
     return appendMathDisplayLine({ ...state, lineBuffer: '' }, line);
+  }
+  if (state.mode === 'code-indented') {
+    const continued = continueIndentedCode(state, line, advanceLine);
+    if (continued) return continued;
+    state = closeIndentedCode(state);
   }
 
   const blockquoteContinuation = BLOCKQUOTE_PREFIX_RE.exec(line);
@@ -149,6 +154,25 @@ function handleBlockLineInternal(
     return blankState;
   }
 
+  // Indented code (CommonMark §4.4): 4+ columns of indent opens a code block
+  // unless it would continue a paragraph or a list item. Checked before the
+  // other recognizers, which all tolerate at most 3 columns of indent.
+  // A blank line closes lists here, so an indented line right after a list is
+  // treated as that item's continuation (as CommonMark would), not as code.
+  if (
+    s.mode === 'block' &&
+    !preserveBlockquote &&
+    s.listStack.length === 0 &&
+    !isParagraphOpen(s) &&
+    !lastDocumentChildIsList(s) &&
+    !isBlankLine(line) &&
+    measureLine(line).leadingCols >= 4
+  ) {
+    s = closeOpenParagraph(s);
+    s = closeOpenList(s);
+    return openIndentedCodeBlock(s, stripIndentColumns(line, 4));
+  }
+
   // Block-level recognizers (each closes any open paragraph first).
   if (THEMATIC_BREAK_RE.test(line)) {
     s = closeOpenParagraph(s, { closeBlockquote: !preserveBlockquote });
@@ -165,11 +189,11 @@ function handleBlockLineInternal(
     return appendHeading(s, level, content);
   }
 
-  const fence = FENCE_OPEN_RE.exec(line);
+  const fence = parseFenceOpener(line);
   if (fence) {
     s = closeOpenParagraph(s, { closeBlockquote: !preserveBlockquote });
     s = closeOpenList(s);
-    return openFencedCodeBlock(s, fence[1] as '```' | '~~~', fence[2] ?? '');
+    return openFencedCodeBlock(s, fence.marker, fence.language, fence.meta);
   }
 
   const htmlKind = detectHtmlBlockStart(line, !isParagraphOpen(s));
@@ -288,12 +312,13 @@ function openFencedCodeBlock(
   state: InternalState,
   fenceChar: '```' | '~~~',
   language: string,
+  meta: string,
 ): InternalState {
   const docId = state.rootId!;
   const [s1, id] = allocId(state);
   const node: CodeBlockAstNode = {
     id, kind: 'code-block', parentId: docId, status: 'streaming',
-    variant: 'fenced', language, text: '',
+    variant: 'fenced', language, meta, text: '',
   };
   const s = appendChild(appendNode(s1, node), docId, id);
   return {
@@ -303,6 +328,96 @@ function openFencedCodeBlock(
     currentNodeId: id,
     codeFenceMarker: fenceChar,
   };
+}
+
+function openIndentedCodeBlock(state: InternalState, text: string): InternalState {
+  const docId = state.rootId!;
+  const [s1, id] = allocId(state);
+  const node: CodeBlockAstNode = {
+    id, kind: 'code-block', parentId: docId, status: 'streaming',
+    variant: 'indented', language: '', meta: '', text,
+  };
+  const s = appendChild(appendNode(s1, node), docId, id);
+  return {
+    ...s,
+    mode: 'code-indented',
+    stack: [...s.stack, id],
+    currentNodeId: id,
+    indentedCodePendingBlanks: [],
+  };
+}
+
+/**
+ * Extend the open indented code block with `line`, or return null when the
+ * line ends it. Blank lines are held until another indented line arrives.
+ */
+function continueIndentedCode(
+  state: InternalState,
+  line: string,
+  advanceLine: boolean,
+): InternalState | null {
+  const id = state.currentNodeId;
+  const node = id != null ? state.nodes[id] : undefined;
+  if (!node || node.kind !== 'code-block') return null;
+  const nextLine = advanceLine ? state.line + 1 : state.line;
+
+  if (isBlankLine(line)) {
+    return {
+      ...state,
+      line: nextLine,
+      lineBuffer: '',
+      indentedCodePendingBlanks: [...state.indentedCodePendingBlanks, stripIndentColumns(line, 4)],
+    };
+  }
+  if (measureLine(line).leadingCols < 4) return null;
+
+  const added = [...state.indentedCodePendingBlanks, stripIndentColumns(line, 4)].join('\n');
+  const nodes = state.nodes.slice();
+  nodes[id!] = { ...node, text: `${node.text}\n${added}` };
+  return { ...state, nodes, line: nextLine, lineBuffer: '', indentedCodePendingBlanks: [] };
+}
+
+function closeIndentedCode(state: InternalState): InternalState {
+  const id = state.currentNodeId;
+  const s = id != null ? setStatus(state, id, 'complete') : state;
+  return {
+    ...s,
+    mode: 'block',
+    stack: id != null && s.stack[s.stack.length - 1] === id ? s.stack.slice(0, -1) : s.stack,
+    currentNodeId: null,
+    indentedCodePendingBlanks: [],
+  };
+}
+
+function lastDocumentChildIsList(state: InternalState): boolean {
+  const doc = state.rootId != null ? state.nodes[state.rootId] : undefined;
+  if (!doc || doc.kind !== 'document') return false;
+  const lastId = doc.children[doc.children.length - 1];
+  return lastId != null && state.nodes[lastId]?.kind === 'list';
+}
+
+function isBlankLine(line: string): boolean {
+  return /^[ \t]*$/.test(line);
+}
+
+/** Remove up to `columns` columns of leading indent, expanding a split tab. */
+function stripIndentColumns(line: string, columns: number): string {
+  let col = 0;
+  let i = 0;
+  while (i < line.length && col < columns) {
+    const c = line[i];
+    if (c === ' ') {
+      col++;
+    } else if (c === '\t') {
+      const next = Math.floor(col / 4) * 4 + 4;
+      if (next > columns) return ' '.repeat(next - columns) + line.slice(i + 1);
+      col = next;
+    } else {
+      break;
+    }
+    i++;
+  }
+  return line.slice(i);
 }
 
 function handleCodeFenceLine(state: InternalState, line: string): InternalState {

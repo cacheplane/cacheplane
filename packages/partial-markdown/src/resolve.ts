@@ -226,7 +226,7 @@ function buildNode(
     case 'code-block': {
       node = {
         id, type: 'code-block', status, parent, index,
-        variant: ast.variant, language: ast.language, text: ast.text,
+        variant: ast.variant, language: ast.language, meta: ast.meta, text: ast.text,
       };
       break;
     }

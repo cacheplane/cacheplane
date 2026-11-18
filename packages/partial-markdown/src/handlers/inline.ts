@@ -407,12 +407,26 @@ function matchLinkOrImage(line: string, start: number): {
   if (depth !== 0) return null;
   const text = line.slice(start + 1, i);
   if (line[i + 1] !== '(') return null;
+  // CommonMark §6.3: the destination may contain balanced, unescaped
+  // parentheses; it ends at whitespace or at the `)` that closes the link.
   let j = i + 2;
-  let url = '';
-  while (j < line.length && line[j] !== ' ' && line[j] !== ')' && line[j] !== '\t') {
-    url += line[j];
+  const urlStart = j;
+  let parens = 0;
+  while (j < line.length && line[j] !== ' ' && line[j] !== '\t') {
+    const c = line[j];
+    if (c === '\\' && j + 1 < line.length) {
+      j += 2;
+      continue;
+    }
+    if (c === '(') parens++;
+    else if (c === ')') {
+      if (parens === 0) break;
+      parens--;
+    }
     j++;
   }
+  if (parens !== 0) return null;
+  const url = line.slice(urlStart, j);
   let title = '';
   if (line[j] === ' ' || line[j] === '\t') {
     while (j < line.length && (line[j] === ' ' || line[j] === '\t')) j++;

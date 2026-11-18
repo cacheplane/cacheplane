@@ -251,6 +251,25 @@ Tabs advance to the next 4-column tab stop. Mixed tabs and spaces are supported.
 Each `MarkdownListNode` exposes advisory `markerCol` and `contentCol` fields for
 layout-aware consumers.
 
+### Code Blocks
+
+````md
+```ts title="client.ts" {3}
+const client = createClient();
+```
+````
+
+The first word of a fenced block's info string becomes `language` (`ts`); the
+rest is kept verbatim, trimmed, in `meta` (`title="client.ts" {3}`). Both are
+empty strings when absent.
+
+Lines indented four or more columns form an indented code block
+(`variant: 'indented'`) with the first four columns removed. As in CommonMark,
+an indented line never interrupts a paragraph or a list item. Because a blank
+line closes the open list, an indented line directly after a list is also left
+alone as that item's continuation, so loose lists from LLMs do not turn into
+code.
+
 ### Tables
 
 ```md
@@ -479,7 +498,8 @@ interface MarkdownTextNode extends MarkdownNodeBase {
 interface MarkdownCodeBlockNode extends MarkdownNodeBase {
   readonly type: 'code-block';
   variant: 'fenced' | 'indented';
-  language: string;
+  language: string; // first info-string word; '' if none
+  meta: string; // rest of the info string, trimmed; '' if none
   text: string;
 }
 

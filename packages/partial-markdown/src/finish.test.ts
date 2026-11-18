@@ -51,7 +51,7 @@ describe('finishInternal', () => {
     s = s2;
     const cb: CodeBlockAstNode = {
       id: cbId, kind: 'code-block', parentId: docId, status: 'streaming',
-      variant: 'fenced', language: 'ts', text: 'const x = 1;',
+      variant: 'fenced', language: 'ts', meta: '', text: 'const x = 1;',
     };
     s = appendNode(s, cb);
     s = { ...s, mode: 'code-fence', stack: [docId, cbId], currentNodeId: cbId };

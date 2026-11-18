@@ -85,9 +85,12 @@ describe('nested lists — tabs', () => {
   it('mixed tabs and spaces — siblings at same effective column', () => {
     // ' \t- ' = 1 space + tab = leadingCols 4 (rounds up to next tab stop)
     // '\t- '  = tab = leadingCols 4
-    // Both lines appear at col 4 → siblings in the same list.
-    const root = parseToTree(' \t- top\n\t- sibling\n');
-    expect(root.children[0].children.length).toBe(2);
+    // Both lines appear at col 4 → siblings in the same nested list. (At the
+    // top level, 4+ columns with no open list is an indented code block.)
+    const root = parseToTree('- parent\n \t- top\n\t- sibling\n');
+    const parent = root.children[0].children[0];
+    const subList = parent.children.find((c: any) => c.type === 'list');
+    expect(subList.children.length).toBe(2);
   });
 });
 

@@ -250,7 +250,8 @@ describe('materialize — cache invalidation', () => {
   it.each([
     ['image status', { type: 'image', status: 'streaming', url: 'u', alt: 'a', title: '' }, 'status', 'complete'],
     ['autolink text', { type: 'autolink', status: 'complete', url: 'u', text: 'before' }, 'text', 'after'],
-    ['code-block variant', { type: 'code-block', status: 'complete', variant: 'fenced', language: '', text: '' }, 'variant', 'indented'],
+    ['code-block variant', { type: 'code-block', status: 'complete', variant: 'fenced', language: '', meta: '', text: '' }, 'variant', 'indented'],
+    ['code-block meta', { type: 'code-block', status: 'complete', variant: 'fenced', language: 'ts', meta: '', text: '' }, 'meta', 'title="a.ts"'],
     ['math-inline delimiter', { type: 'math-inline', status: 'complete', delimiter: '$', text: 'x' }, 'delimiter', '\\(\\)'],
     ['list marker column', { type: 'list', status: 'complete', ordered: false, start: null, tight: false, markerCol: 0, contentCol: 2, children: [] }, 'markerCol', 4],
     ['list content column', { type: 'list', status: 'complete', ordered: false, start: null, tight: false, markerCol: 0, contentCol: 2, children: [] }, 'contentCol', 6],
