@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.6.0 — 2026-11-17
+
+### Added
+
+- Code-block nodes expose `meta`: the fenced info string after the language,
+  trimmed (```` ```ts title="a.ts" ```` → `language: 'ts'`,
+  `meta: 'title="a.ts"'`). It is `''` when absent and for indented blocks.
+
+### Fixed
+
+- A fenced code opener with words after the language no longer falls back to
+  a paragraph followed by an empty code block (CommonMark §4.5).
+- Lines indented four or more columns now parse as indented code blocks
+  instead of paragraphs that keep their leading spaces (CommonMark §4.4). They
+  never interrupt a paragraph or list item, and an indented line directly
+  after a list stays list continuation.
+- Link and image destinations may contain balanced parentheses, so
+  `[x](f(1))` no longer ends the destination at the inner `(` (CommonMark §6.3).
+
 ## 0.5.13 — 2026-11-12
 
 ### Fixed
