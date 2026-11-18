@@ -407,6 +407,12 @@ export interface InternalState extends StreamState {
     markerCol: number;
     contentCol: number;
   }>;
+  /**
+   * Blank lines (indent already stripped) seen inside an open indented code
+   * block. They join the block only if another indented line follows, so
+   * trailing blank lines never reach the node text.
+   */
+  indentedCodePendingBlanks: string[];
 }
 
 // ────────────────────────────────────────────────────────────────────────────

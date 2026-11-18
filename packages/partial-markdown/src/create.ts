@@ -38,5 +38,6 @@ export function createInternal(options?: PartialMarkdownParserOptions): Internal
     nextCitationIndex: 1,
     tablePending: null,
     listStack: [],
+    indentedCodePendingBlanks: [],
   };
 }
