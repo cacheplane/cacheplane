@@ -103,7 +103,8 @@ describe('intraword underscores (CommonMark §6.2)', () => {
       return (n?.type === 'emphasis' ? 1 : 0) + Math.max(0, ...kids.map(depth));
     };
     expect(depth(p.root ?? undefined)).toBe(1);
-    expect(text(p.root)).toBe(' _a'.repeat(199) + ' a');
+    // The paragraph's leading space is stripped (CommonMark §4.8).
+    expect(text(p.root)).toBe('_a' + ' _a'.repeat(198) + ' a');
     p.finish();
     expect(kinds(p.root)).not.toContain('emphasis');
   });

@@ -599,7 +599,10 @@ function appendLineToParagraph(state: InternalState, paraId: number, line: strin
   return parseParagraphLine(s, paraId, line);
 }
 
-function parseParagraphLine(state: InternalState, paraId: number, line: string): InternalState {
+function parseParagraphLine(state: InternalState, paraId: number, rawLine: string): InternalState {
+  // CommonMark §4.8: each paragraph line contributes its content with initial
+  // whitespace stripped (lazy, indented continuation lines included).
+  const line = rawLine.replace(/^[ \t]+/, '');
   const trailingSpaces = / {2,}$/.exec(line);
   if (trailingSpaces) {
     const content = line.slice(0, -trailingSpaces[0].length);

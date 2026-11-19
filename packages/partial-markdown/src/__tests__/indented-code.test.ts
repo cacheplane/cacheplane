@@ -46,7 +46,7 @@ describe('indented code blocks', () => {
   });
 
   it('does not interrupt a paragraph (lazy continuation)', () => {
-    expect(parseChunks(['para\n    still para'])).toEqual([para('para', '    still para')]);
+    expect(parseChunks(['para\n    still para'])).toEqual([para('para', 'still para')]);
   });
 
   it('does not take over list item continuation', () => {
