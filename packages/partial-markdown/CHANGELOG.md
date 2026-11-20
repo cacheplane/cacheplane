@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.1 — 2026-11-19
+
+### Fixed
+
+- Paragraph lines no longer keep their leading whitespace as text. Lazy and
+  indented continuation lines were rendered indented by renderers that
+  preserve whitespace (CommonMark §4.8).
+
 ## 0.6.0 — 2026-11-17
 
 ### Added
